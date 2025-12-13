@@ -82,3 +82,27 @@ Go AppとブラウザがマシンでもOAuthセットアップできるように
 - `go/client/example_test.go` - Go example usage
 - `go/client/go.mod` - Go module
 - `go/client/go.sum` - Go dependencies
+- `go/client/e2e_test.go` - WebSocket E2E tests
+- `go/client/e2e_webrtc_test.go` - WebRTC P2P E2E tests
+
+### Phase 7: E2Eテスト
+
+#### WebSocket接続テスト
+- [x] Go AppからWebSocket接続 (`/ws/app?apiKey=xxx`)
+- [x] 認証成功確認 (`auth_ok` メッセージ受信)
+- [x] 接続維持・再接続テスト
+
+#### WebRTC P2P接続テスト
+- [x] ブラウザ→Go App間のP2P接続確立（ローカルLoopbackテスト）
+- [x] SDP offer/answer交換
+- [x] ICE candidate交換
+- [x] DataChannel通信テスト
+
+#### E2Eテスト実行方法
+```bash
+# WebSocket E2Eテスト（要サーバー）
+E2E_TEST=1 E2E_API_KEY=your-key go test -v ./go/client -run E2E
+
+# WebRTC E2Eテスト（サーバー不要、ローカルLoopback）
+E2E_TEST=1 go test -v ./go/client -run TestE2EWebRTC
+```
