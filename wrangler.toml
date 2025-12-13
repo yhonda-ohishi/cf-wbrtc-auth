@@ -23,3 +23,7 @@ new_classes = ["SignalingDO"]
 # Secrets (set via wrangler secret put):
 # - GOOGLE_CLIENT_SECRET
 # - JWT_SECRET
+
+# Static assets (serves files from dist/ directory)
+[assets]
+directory = "./dist"

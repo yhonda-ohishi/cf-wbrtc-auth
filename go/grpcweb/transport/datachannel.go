@@ -144,7 +144,9 @@ func (t *DataChannelTransport) OnClose(callback func()) {
 // Start begins listening for incoming requests.
 // This should be called after all handlers are registered.
 func (t *DataChannelTransport) Start() {
+	log.Printf("[Transport] Start() called, setting up OnMessage handler")
 	t.dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+		log.Printf("[Transport] Received message (%d bytes)", len(msg.Data))
 		t.handleMessage(msg.Data)
 	})
 

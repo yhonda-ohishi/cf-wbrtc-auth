@@ -924,7 +924,23 @@ app.get('/ws', async (c) => {
     return c.text('Expected WebSocket', 426);
   }
 
-  const token = c.req.query('token');
+  // Try query param first, then cookie
+  let token = c.req.query('token');
+  if (!token) {
+    // Try to get token from cookie
+    const cookieHeader = c.req.header('Cookie');
+    if (cookieHeader) {
+      const cookies = cookieHeader.split(';').map(c => c.trim());
+      for (const cookie of cookies) {
+        const [name, value] = cookie.split('=');
+        if (name === 'token') {
+          token = value;
+          break;
+        }
+      }
+    }
+  }
+
   if (!token) {
     return c.text('Missing token', 401);
   }
@@ -965,7 +981,6 @@ app.get('/', async (c) => {
 // To update: run `npm run build:client` and paste the output here
 // Or use wrangler assets binding for dynamic serving
 import { CLIENT_JS } from './client/bundle';
-import { REFLECTION_CLIENT_JS } from './client/reflection-bundle';
 
 app.get('/client.js', async (c) => {
   return new Response(CLIENT_JS, {
@@ -978,11 +993,6 @@ app.get('/reflection', async (c) => {
   return c.html(getReflectionTestUI());
 });
 
-app.get('/reflection-client.js', async (c) => {
-  return new Response(REFLECTION_CLIENT_JS, {
-    headers: { 'Content-Type': 'application/javascript; charset=utf-8' },
-  });
-});
 
 // Static files fallback
 app.get('/*', async (c) => {

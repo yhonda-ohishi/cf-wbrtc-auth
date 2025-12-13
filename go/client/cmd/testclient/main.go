@@ -6,16 +6,20 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/anthropics/cf-wbrtc-auth/go/client"
 	"github.com/anthropics/cf-wbrtc-auth/go/grpcweb"
 )
+
+// Default credentials file path
+const defaultCredentialsFile = ".testclient-credentials"
 
 // EchoRequest is the request message for Echo and Reverse methods
 type EchoRequest struct {
@@ -56,15 +60,21 @@ func (h *TestClientHandler) OnAppRegistered(payload client.AppRegisteredPayload)
 func (h *TestClientHandler) OnOffer(sdp string, requestID string) {
 	log.Printf("← Received WebRTC offer (requestID: %s)", requestID)
 
+	// Create handler first so we can set pc reference after creation
+	dcHandler := &DataChannelHandler{requestID: requestID}
+
 	// Create a new peer connection for this offer
 	pc, err := client.NewPeerConnection(client.PeerConfig{
 		SignalingClient: h.signalingClient,
-		Handler:         &DataChannelHandler{requestID: requestID},
+		Handler:         dcHandler,
 	})
 	if err != nil {
 		log.Printf("✗ Failed to create peer connection: %v", err)
 		return
 	}
+
+	// Set the PeerConnection reference in handler for OnOpen callback
+	dcHandler.pc = pc
 
 	// Store the connection
 	h.activeConnections[requestID] = pc
@@ -76,9 +86,7 @@ func (h *TestClientHandler) OnOffer(sdp string, requestID string) {
 	}
 
 	log.Printf("→ Sent answer for requestID: %s", requestID)
-
-	// Monitor and setup gRPC transport when DataChannel is ready
-	go monitorDataChannelSetup(pc, requestID)
+	// gRPC transport will be set up in DataChannelHandler.OnOpen()
 }
 
 func (h *TestClientHandler) OnAnswer(sdp string, appID string) {
@@ -104,14 +112,39 @@ func (h *TestClientHandler) OnDisconnected() {
 // DataChannelHandler implements client.DataChannelHandler
 type DataChannelHandler struct {
 	requestID string
+	pc        *client.PeerConnection
+	transport *grpcweb.Transport
 }
 
 func (h *DataChannelHandler) OnMessage(data []byte) {
 	// Messages are handled by grpcweb.Transport
+	// This callback is called BEFORE transport is set up, so we need to buffer or handle differently
+	// However, once transport.Start() is called, this callback is replaced
+	log.Printf("  [DataChannelHandler] Received message (%d bytes) - transport not ready yet", len(data))
 }
 
 func (h *DataChannelHandler) OnOpen() {
 	log.Printf("✓ DataChannel opened for requestID: %s", h.requestID)
+
+	// Immediately set up gRPC transport when DataChannel opens
+	dc := h.pc.DataChannel()
+	if dc == nil {
+		log.Printf("✗ DataChannel is nil in OnOpen")
+		return
+	}
+
+	log.Printf("✓ Setting up gRPC transport...")
+
+	// Create grpcweb transport
+	h.transport = grpcweb.NewTransport(dc, nil)
+
+	// Setup handlers BEFORE starting transport
+	setupGRPCHandlers(h.transport)
+
+	// Start the transport - this will replace the OnMessage handler
+	h.transport.Start()
+
+	log.Printf("✓ gRPC-Web transport started for requestID: %s", h.requestID)
 }
 
 func (h *DataChannelHandler) OnClose() {
@@ -175,51 +208,67 @@ func setupGRPCHandlers(transport *grpcweb.Transport) {
 	log.Println("  - /grpc.reflection.v1alpha.ServerReflection/ListServices (reflection)")
 }
 
-// monitorDataChannelSetup waits for the DataChannel to be established and sets up gRPC transport
-func monitorDataChannelSetup(pc *client.PeerConnection, requestID string) {
-	// Poll for DataChannel to be ready
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
 
-	timeout := time.After(10 * time.Second)
-
-	for {
-		select {
-		case <-ticker.C:
-			dc := pc.DataChannel()
-			if dc != nil && dc.ReadyState() == 1 { // 1 = Open
-				log.Printf("✓ DataChannel ready, setting up gRPC transport...")
-
-				// Create grpcweb transport
-				transport := grpcweb.NewTransport(dc, nil)
-
-				// Setup handlers
-				setupGRPCHandlers(transport)
-
-				// Start the transport
-				transport.Start()
-
-				log.Printf("✓ gRPC-Web transport started for requestID: %s", requestID)
-				return
-			}
-		case <-timeout:
-			log.Printf("✗ Timeout waiting for DataChannel to be ready")
-			return
-		}
+// getCredentialsPath returns the full path to credentials file
+func getCredentialsPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return defaultCredentialsFile
 	}
+	return filepath.Join(homeDir, defaultCredentialsFile)
+}
+
+// getBaseURL extracts base URL from WebSocket URL (ws://host/ws/app -> https://host)
+func getBaseURL(wsURL string) string {
+	baseURL := wsURL
+	baseURL = strings.Replace(baseURL, "wss://", "https://", 1)
+	baseURL = strings.Replace(baseURL, "ws://", "http://", 1)
+	// Remove path part
+	if idx := strings.Index(baseURL, "/ws"); idx != -1 {
+		baseURL = baseURL[:idx]
+	}
+	return baseURL
 }
 
 func main() {
 	// Parse command line flags
-	serverURL := flag.String("server", "ws://localhost:8787/ws/app", "WebSocket server URL")
-	apiKey := flag.String("api-key", "", "API key for authentication")
+	serverURL := flag.String("server", "wss://cf-wbrtc-auth.m-tama-ramu.workers.dev/ws/app", "WebSocket server URL")
+	apiKey := flag.String("api-key", "", "API key for authentication (auto-setup if empty)")
 	appName := flag.String("app-name", "TestClient", "Application name")
 	flag.Parse()
 
-	if *apiKey == "" {
-		fmt.Fprintf(os.Stderr, "Error: --api-key is required\n")
-		flag.Usage()
-		os.Exit(1)
+	actualAPIKey := *apiKey
+	credPath := getCredentialsPath()
+
+	// If no API key provided, try to load from file or run setup
+	if actualAPIKey == "" {
+		// Try to load from credentials file
+		creds, err := client.LoadCredentials(credPath)
+		if err == nil && creds.APIKey != "" {
+			log.Printf("✓ Loaded API key from %s", credPath)
+			actualAPIKey = creds.APIKey
+		} else {
+			// Run OAuth setup
+			log.Println("No API key found. Starting OAuth setup...")
+			baseURL := getBaseURL(*serverURL)
+			log.Printf("Base URL: %s", baseURL)
+
+			setupResult, err := client.Setup(context.Background(), client.SetupConfig{
+				ServerURL: baseURL,
+			})
+			if err != nil {
+				log.Fatalf("Setup failed: %v", err)
+			}
+
+			actualAPIKey = setupResult.APIKey
+
+			// Save credentials for future use
+			if err := client.SaveCredentials(credPath, setupResult); err != nil {
+				log.Printf("Warning: failed to save credentials: %v", err)
+			} else {
+				log.Printf("✓ Credentials saved to %s", credPath)
+			}
+		}
 	}
 
 	log.Printf("Starting Test Client")
@@ -229,7 +278,7 @@ func main() {
 	// Create signaling client
 	config := client.ClientConfig{
 		ServerURL:    *serverURL,
-		APIKey:       *apiKey,
+		APIKey:       actualAPIKey,
 		AppName:      *appName,
 		Capabilities: []string{"grpc", "echo"},
 		PingInterval: 30 * time.Second,

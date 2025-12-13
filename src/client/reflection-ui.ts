@@ -20,6 +20,11 @@ interface UserInfo {
   name: string;
 }
 
+// Debug helper
+function debug(context: string, ...args: any[]) {
+  console.log(`[ReflectionUI:${context}]`, ...args);
+}
+
 class ReflectionUIManager {
   private signalingClient: SignalingClient | null = null;
   private webrtcClient: WebRTCClient | null = null;
@@ -42,6 +47,7 @@ class ReflectionUIManager {
   private statusDiv!: HTMLElement;
 
   constructor() {
+    debug('constructor', 'Initializing ReflectionUIManager');
     this.initializeDOM();
     this.checkAuthStatus();
   }
@@ -67,20 +73,25 @@ class ReflectionUIManager {
   }
 
   private async checkAuthStatus(): Promise<void> {
+    debug('checkAuthStatus', 'Checking auth status...');
     try {
       // Check /api/me endpoint - httpOnly cookie sent automatically
       const response = await fetch('/api/me');
+      debug('checkAuthStatus', 'Response status:', response.status);
 
       if (response.ok) {
         this.userInfo = await response.json();
+        debug('checkAuthStatus', 'User info:', this.userInfo);
         this.showUserInterface();
         // Cookie will be sent with WebSocket connection
         this.initializeWebSocket();
       } else {
+        debug('checkAuthStatus', 'Not authenticated, showing login');
         this.showLogin();
       }
     } catch (error) {
       console.error('Auth check failed:', error);
+      debug('checkAuthStatus', 'Error:', error);
       this.showLogin();
     }
   }
@@ -126,36 +137,42 @@ class ReflectionUIManager {
   private async initializeWebSocket(): Promise<void> {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
+    debug('initializeWebSocket', 'WebSocket URL:', wsUrl);
 
     // Token not needed - cookie is sent automatically with WebSocket connection
     this.signalingClient = new SignalingClient(wsUrl);
 
     // Set up event handlers
     this.signalingClient.onConnected = () => {
+      debug('WS:onConnected', 'WebSocket connected');
       this.updateWSStatus('connected');
     };
 
     this.signalingClient.onDisconnected = () => {
+      debug('WS:onDisconnected', 'WebSocket disconnected');
       this.updateWSStatus('disconnected');
     };
 
     this.signalingClient.onAuthenticated = (payload) => {
-      console.log('Authenticated:', payload);
+      debug('WS:onAuthenticated', 'Authenticated:', payload);
       this.updateWSStatus('authenticated');
       // Request app list
+      debug('WS:onAuthenticated', 'Requesting app list...');
       this.signalingClient?.getApps();
     };
 
     this.signalingClient.onAuthError = (payload) => {
-      console.error('Auth error:', payload);
+      debug('WS:onAuthError', 'Auth error:', payload);
       this.updateWSStatus('error');
       alert('Authentication failed: ' + payload.error);
       this.handleLogout();
     };
 
     this.signalingClient.onAppsListReceived = (payload) => {
-      console.log('Apps list received:', payload);
-      payload.apps.forEach(app => {
+      debug('WS:onAppsListReceived', 'Apps list received:', JSON.stringify(payload, null, 2));
+      debug('WS:onAppsListReceived', 'Number of apps:', payload.apps?.length ?? 0);
+      payload.apps.forEach((app, index) => {
+        debug('WS:onAppsListReceived', `App ${index}:`, app);
         this.apps.set(app.appId, {
           id: app.appId,
           name: app.name,
@@ -163,11 +180,12 @@ class ReflectionUIManager {
           status: app.status,
         });
       });
+      debug('WS:onAppsListReceived', 'Total apps in map:', this.apps.size);
       this.renderAppList();
     };
 
     this.signalingClient.onAppStatus = (payload) => {
-      console.log('App status update:', payload);
+      debug('WS:onAppStatus', 'App status update:', payload);
       const app = this.apps.get(payload.appId);
       if (app) {
         app.status = payload.status;
@@ -181,24 +199,26 @@ class ReflectionUIManager {
           status: payload.status,
         });
       }
+      debug('WS:onAppStatus', 'Apps map after update:', Array.from(this.apps.entries()));
       this.renderAppList();
     };
 
     this.signalingClient.onError = (payload) => {
-      console.error('WebSocket error:', payload);
+      debug('WS:onError', 'WebSocket error:', payload);
       this.setStatus('Error: ' + payload.message, 'error');
     };
 
     // Initialize WebRTC client
+    debug('initializeWebSocket', 'Initializing WebRTC client');
     this.webrtcClient = new WebRTCClient(this.signalingClient);
 
     this.webrtcClient.onDataChannelOpen = ({ appId }) => {
-      console.log('Data channel opened:', appId);
+      debug('WebRTC:onDataChannelOpen', 'Data channel opened:', appId);
       this.setStatus('Connected to ' + appId, 'success');
     };
 
     this.webrtcClient.onDataChannelClose = ({ appId }) => {
-      console.log('Data channel closed:', appId);
+      debug('WebRTC:onDataChannelClose', 'Data channel closed:', appId);
       this.setStatus('Disconnected from ' + appId, 'info');
       if (this.connectedAppId === appId) {
         this.connectedAppId = null;
@@ -207,15 +227,17 @@ class ReflectionUIManager {
     };
 
     this.webrtcClient.onError = ({ appId, message }) => {
-      console.error('WebRTC error:', appId, message);
+      debug('WebRTC:onError', 'WebRTC error:', appId, message);
       this.setStatus('Error: ' + message, 'error');
     };
 
     // Connect to WebSocket
     try {
+      debug('initializeWebSocket', 'Connecting to WebSocket...');
       await this.signalingClient.connect();
+      debug('initializeWebSocket', 'WebSocket connect() returned');
     } catch (error) {
-      console.error('Failed to connect to WebSocket:', error);
+      debug('initializeWebSocket', 'Failed to connect to WebSocket:', error);
       this.updateWSStatus('error');
     }
   }
@@ -226,7 +248,10 @@ class ReflectionUIManager {
   }
 
   private renderAppList(): void {
+    debug('renderAppList', 'Rendering app list...');
+    debug('renderAppList', 'All apps:', Array.from(this.apps.values()));
     const appArray = Array.from(this.apps.values()).filter(app => app.status === 'online');
+    debug('renderAppList', 'Online apps:', appArray);
 
     // Update select dropdown
     this.appSelectElement.innerHTML = '<option value="">-- Select an Online App --</option>' +
@@ -236,10 +261,12 @@ class ReflectionUIManager {
 
     // Enable/disable connect button
     this.connectBtn.disabled = appArray.length === 0;
+    debug('renderAppList', 'Connect button disabled:', this.connectBtn.disabled);
   }
 
   private async handleConnectAndList(): Promise<void> {
     const selectedAppId = this.appSelectElement.value;
+    debug('handleConnectAndList', 'Selected app ID:', selectedAppId);
 
     if (!selectedAppId) {
       alert('Please select an app');
@@ -247,6 +274,7 @@ class ReflectionUIManager {
     }
 
     if (!this.webrtcClient) {
+      debug('handleConnectAndList', 'WebRTC client not initialized');
       alert('WebRTC client not initialized');
       return;
     }
@@ -256,28 +284,36 @@ class ReflectionUIManager {
       this.connectBtn.disabled = true;
 
       // Connect to app via WebRTC
+      debug('handleConnectAndList', 'Calling webrtcClient.connectToApp...');
       await this.webrtcClient.connectToApp(selectedAppId);
       this.connectedAppId = selectedAppId;
+      debug('handleConnectAndList', 'Connected to app via WebRTC');
 
       this.setStatus('Connected! Listing services...', 'info');
 
       // Get transport
+      debug('handleConnectAndList', 'Getting transport...');
       const transport = this.webrtcClient.getTransport(selectedAppId);
+      debug('handleConnectAndList', 'Transport:', transport);
       if (!transport) {
         throw new Error('Failed to get transport');
       }
 
       // Create reflection client
+      debug('handleConnectAndList', 'Creating ReflectionClient...');
       this.reflectionClient = new ReflectionClient(transport);
 
       // List services
+      debug('handleConnectAndList', 'Calling listServices...');
       const response = await this.reflectionClient.listServices({ timeout: 10000 });
+      debug('handleConnectAndList', 'listServices response:', response);
 
       // Display results
       this.displayResults(response);
       this.setStatus('Services listed successfully', 'success');
 
     } catch (error) {
+      debug('handleConnectAndList', 'Error:', error);
       console.error('Failed to connect or list services:', error);
       this.setStatus('Error: ' + error, 'error');
       alert('Failed to list services: ' + error);
