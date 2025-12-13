@@ -1,0 +1,25 @@
+name = "cf-wbrtc-auth"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+[vars]
+GOOGLE_CLIENT_ID = ""
+
+# Create KV namespace: wrangler kv:namespace create KV
+# Then update the id below
+[[kv_namespaces]]
+binding = "KV"
+id = "YOUR_KV_NAMESPACE_ID"
+preview_id = "YOUR_KV_NAMESPACE_PREVIEW_ID"
+
+[[durable_objects.bindings]]
+name = "SIGNALING_DO"
+class_name = "SignalingDO"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["SignalingDO"]
+
+# Secrets (set via wrangler secret put):
+# - GOOGLE_CLIENT_SECRET
+# - JWT_SECRET
