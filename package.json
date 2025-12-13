@@ -5,13 +5,15 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "cf-typegen": "wrangler types"
+    "cf-typegen": "wrangler types",
+    "build:client": "esbuild src/client/index.ts --bundle --format=esm --target=es2020 --outfile=dist/client.js --minify"
   },
   "dependencies": {
     "hono": "^4.6.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241127.0",
+    "esbuild": "^0.24.0",
     "typescript": "^5.6.0",
     "wrangler": "^3.91.0"
   }

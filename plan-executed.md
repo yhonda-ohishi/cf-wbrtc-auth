@@ -22,14 +22,25 @@
 - [x] 接続管理
 - [x] WebRTC シグナリング（offer/answer/ice）
 
+### Phase 4: ブラウザ側クライアント
+- [x] ブラウザ側 WebSocket クライアント (`src/client/ws-client.ts`)
+- [x] ブラウザ側 WebRTC クライアント (`src/client/webrtc-client.ts`)
+- [x] 管理 UI (`src/client/index.html`, `src/client/ui.ts`)
+
 ## Files Created
 - `package.json`
 - `tsconfig.json`
 - `wrangler.toml`
-- `src/index.ts` - Entry point
+- `src/index.ts` - Entry point with embedded UI
 - `src/auth/oauth.ts` - Google OAuth
 - `src/auth/jwt.ts` - JWT sign/verify
 - `src/middleware/auth.ts` - Auth middleware
 - `src/setup/index.ts` - Go App setup flow
 - `src/api/apps.ts` - App management API
 - `src/do/signaling.ts` - SignalingDO
+- `src/client/ws-client.ts` - WebSocket client
+- `src/client/webrtc-client.ts` - WebRTC client
+- `src/client/ui.ts` - UI manager
+- `src/client/index.ts` - Client exports
+- `src/client/index.html` - Management UI
+- `src/client/bundle.ts` - Embedded client bundle

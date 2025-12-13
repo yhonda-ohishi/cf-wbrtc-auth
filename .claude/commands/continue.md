@@ -1,0 +1,1 @@
+claude.mdとcommitを確認し、plan.mdを確認、実行済みをplan-executedに移行し、続行
