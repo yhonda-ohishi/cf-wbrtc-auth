@@ -116,13 +116,160 @@ npm run cf-typegen
 | GET | `/ws?token=xxx` | ブラウザ用WebSocket |
 | GET | `/ws/app?apiKey=xxx` | Go App用WebSocket |
 
-## Go App 接続
+## Go クライアント
 
-Go App から接続する際は、発行されたAPIキーを使用:
+### インストール
+
+```bash
+go get github.com/anthropics/cf-wbrtc-auth/go/client
+```
+
+### 初期セットアップ (OAuth)
+
+初回のみ、ブラウザでOAuth認証を行いAPIキーを取得:
 
 ```go
-url := "wss://YOUR_WORKER.workers.dev/ws/app?apiKey=YOUR_API_KEY"
-conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+package main
+
+import (
+    "context"
+    "log"
+    "time"
+
+    client "github.com/anthropics/cf-wbrtc-auth/go/client"
+)
+
+func main() {
+    setupConfig := client.SetupConfig{
+        ServerURL:    "https://cf-wbrtc-auth.m-tama-ramu.workers.dev",
+        PollInterval: 2 * time.Second,
+        Timeout:      5 * time.Minute,
+    }
+
+    result, err := client.Setup(context.Background(), setupConfig)
+    if err != nil {
+        log.Fatalf("Setup failed: %v", err)
+    }
+
+    // 認証情報をファイルに保存
+    if err := client.SaveCredentials("credentials.env", result); err != nil {
+        log.Fatalf("Failed to save credentials: %v", err)
+    }
+
+    log.Printf("Setup complete! API Key: %s", result.APIKey)
+}
+```
+
+### WebSocket + WebRTC クライアント
+
+```go
+package main
+
+import (
+    "context"
+    "encoding/json"
+    "log"
+    "os"
+    "os/signal"
+    "syscall"
+
+    client "github.com/anthropics/cf-wbrtc-auth/go/client"
+)
+
+// AppHandler は EventHandler と DataChannelHandler を実装
+type AppHandler struct {
+    signalingClient *client.SignalingClient
+    peerConnection  *client.PeerConnection
+}
+
+// シグナリングイベント
+func (h *AppHandler) OnAuthenticated(payload client.AuthOKPayload) {
+    log.Printf("Authenticated as %s", payload.UserID)
+}
+
+func (h *AppHandler) OnAuthError(payload client.AuthErrorPayload) {
+    log.Printf("Auth error: %s", payload.Error)
+}
+
+func (h *AppHandler) OnAppRegistered(payload client.AppRegisteredPayload) {
+    log.Printf("App registered: %s", payload.AppID)
+}
+
+func (h *AppHandler) OnOffer(sdp string, requestID string) {
+    // ブラウザからのWebRTC offer を処理
+    if h.peerConnection == nil {
+        pc, err := client.NewPeerConnection(client.PeerConfig{
+            SignalingClient: h.signalingClient,
+            Handler:         h,
+        })
+        if err != nil {
+            log.Printf("Failed to create peer connection: %v", err)
+            return
+        }
+        h.peerConnection = pc
+    }
+    h.peerConnection.HandleOffer(sdp, requestID)
+}
+
+func (h *AppHandler) OnAnswer(sdp string, appID string) {}
+
+func (h *AppHandler) OnICE(candidate json.RawMessage) {
+    if h.peerConnection != nil {
+        h.peerConnection.AddICECandidate(candidate)
+    }
+}
+
+func (h *AppHandler) OnError(message string)  { log.Printf("Error: %s", message) }
+func (h *AppHandler) OnConnected()            { log.Println("Connected") }
+func (h *AppHandler) OnDisconnected()         { log.Println("Disconnected") }
+
+// DataChannel イベント
+func (h *AppHandler) OnMessage(data []byte) {
+    log.Printf("Received: %s", string(data))
+    // エコーバック
+    h.peerConnection.SendText("Echo: " + string(data))
+}
+
+func (h *AppHandler) OnOpen()  { log.Println("DataChannel opened") }
+func (h *AppHandler) OnClose() { log.Println("DataChannel closed") }
+
+func main() {
+    handler := &AppHandler{}
+
+    config := client.ClientConfig{
+        ServerURL:    "wss://cf-wbrtc-auth.m-tama-ramu.workers.dev/ws/app",
+        APIKey:       os.Getenv("API_KEY"),
+        AppName:      "MyPrintService",
+        Capabilities: []string{"print", "scrape"},
+        Handler:      handler,
+    }
+
+    signalingClient := client.NewSignalingClient(config)
+    handler.signalingClient = signalingClient
+
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+
+    if err := signalingClient.Connect(ctx); err != nil {
+        log.Fatalf("Failed to connect: %v", err)
+    }
+    defer signalingClient.Close()
+
+    // シグナル待機
+    sigChan := make(chan os.Signal, 1)
+    signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+    <-sigChan
+}
+```
+
+### E2Eテスト実行
+
+```bash
+# WebRTC ローカルテスト（サーバー不要）
+E2E_TEST=1 go test -v ./go/client -run TestE2EWebRTC
+
+# WebSocket テスト（サーバー必要）
+E2E_TEST=1 E2E_API_KEY=your-key go test -v ./go/client -run E2E
 ```
 
 ## ファイル構成
