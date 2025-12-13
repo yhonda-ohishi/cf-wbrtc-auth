@@ -4,7 +4,7 @@ compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
-GOOGLE_CLIENT_ID = ""
+GOOGLE_CLIENT_ID = "747065218280-ugkrbgaoik32f5mmi94sso4b0026j3cp.apps.googleusercontent.com"
 
 # Create KV namespace: wrangler kv:namespace create KV
 # Then update the id below
