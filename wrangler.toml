@@ -10,8 +10,7 @@ GOOGLE_CLIENT_ID = ""
 # Then update the id below
 [[kv_namespaces]]
 binding = "KV"
-id = "YOUR_KV_NAMESPACE_ID"
-preview_id = "YOUR_KV_NAMESPACE_PREVIEW_ID"
+id = "badebab972474c26ae711fbc2b10d735"
 
 [[durable_objects.bindings]]
 name = "SIGNALING_DO"
