@@ -66,25 +66,15 @@ class UIManager {
 
   private async checkAuthStatus(): Promise<void> {
     try {
-      const token = this.getToken();
-      if (!token) {
-        this.showLogin();
-        return;
-      }
-
-      // Check /auth/me endpoint
-      const response = await fetch('/api/me', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
+      // Check /api/me endpoint - httpOnly cookie sent automatically
+      const response = await fetch('/api/me');
 
       if (response.ok) {
         this.userInfo = await response.json();
         this.showUserInterface();
-        this.initializeWebSocket(token);
+        // Cookie will be sent with WebSocket connection
+        this.initializeWebSocket();
       } else {
-        this.clearToken();
         this.showLogin();
       }
     } catch (error) {
@@ -98,18 +88,18 @@ class UIManager {
     const cookies = document.cookie.split(';');
     for (const cookie of cookies) {
       const [name, value] = cookie.trim().split('=');
-      if (name === 'auth_token') {
+      if (name === 'token') {
         return value;
       }
     }
 
     // Try localStorage
-    return localStorage.getItem('auth_token');
+    return localStorage.getItem('token');
   }
 
   private clearToken(): void {
-    document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-    localStorage.removeItem('auth_token');
+    document.cookie = 'token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+    localStorage.removeItem('token');
   }
 
   private showLogin(): void {
@@ -147,11 +137,12 @@ class UIManager {
     this.showLogin();
   }
 
-  private async initializeWebSocket(token: string): Promise<void> {
+  private async initializeWebSocket(): Promise<void> {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
 
-    this.signalingClient = new SignalingClient(wsUrl, token);
+    // Token not needed - cookie is sent automatically with WebSocket connection
+    this.signalingClient = new SignalingClient(wsUrl);
 
     // Set up event handlers
     this.signalingClient.onConnected = () => {

@@ -554,8 +554,8 @@ app.get('/', async (c) => {
 import { CLIENT_JS } from './client/bundle';
 
 app.get('/client.js', async (c) => {
-  return c.text(CLIENT_JS, {
-    headers: { 'Content-Type': 'application/javascript' },
+  return new Response(CLIENT_JS, {
+    headers: { 'Content-Type': 'application/javascript; charset=utf-8' },
   });
 });
 

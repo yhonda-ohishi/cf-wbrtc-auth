@@ -31,6 +31,23 @@
 - [x] Workers 統合テスト (`test/jwt.test.ts`, `test/auth.test.ts`, `test/apps.test.ts`)
 - [x] API ドキュメント (`docs/API.md`)
 
+### Phase 6: ポーリング方式セットアップ
+Go AppとブラウザがマシンでもOAuthセットアップできるように、ポーリング方式に変更
+
+#### サーバー側 (TypeScript)
+- [x] `POST /setup/init` - setupToken生成、KVに保存（5分TTL）
+- [x] `GET /setup/:token` - OAuth開始ページ（トークン検証→OAuth→登録フォーム）
+- [x] `POST /setup/:token/register` - アプリ登録、APIキーをKVに保存
+- [x] `GET /setup/poll?token=xxx` - ステータス確認（pending/complete）
+
+#### Go client側
+- [x] `Setup()` をポーリング方式に書き換え
+- [x] テスト更新
+
+#### その他
+- [x] localhost向けCookie secure属性の修正 (`src/auth/oauth.ts`)
+- [x] WebSocket Cookie token読み取り (`src/do/signaling.ts`)
+
 ## Files Created
 - `package.json`
 - `tsconfig.json`
@@ -54,3 +71,14 @@
 - `test/apps.test.ts` - App API tests
 - `test/README.md` - Test documentation
 - `docs/API.md` - API documentation
+- `docs/setup-api.md` - Setup API documentation
+- `test/setup.test.ts` - Setup API tests
+- `go/client/setup.go` - Go client setup (polling)
+- `go/client/setup_test.go` - Go client setup tests
+- `go/client/client.go` - Go client core
+- `go/client/client_test.go` - Go client core tests
+- `go/client/webrtc.go` - Go WebRTC client
+- `go/client/messages.go` - Go message types
+- `go/client/example_test.go` - Go example usage
+- `go/client/go.mod` - Go module
+- `go/client/go.sum` - Go dependencies

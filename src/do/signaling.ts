@@ -11,6 +11,7 @@ interface Connection {
   appId?: string;
   appName?: string;
   connectedAt: number;
+  pendingToken?: string; // Token from cookie/query for auto-auth
 }
 
 interface Env {
@@ -42,7 +43,21 @@ export class SignalingDO implements DurableObject {
     const connId = crypto.randomUUID();
     const isAppConnection = url.pathname === '/ws/app';
     const apiKey = url.searchParams.get('apiKey');
-    const token = url.searchParams.get('token');
+    // Token can come from query param or cookie
+    let token = url.searchParams.get('token');
+    if (!token) {
+      const cookieHeader = request.headers.get('Cookie');
+      if (cookieHeader) {
+        const cookies = cookieHeader.split(';').map((c) => c.trim());
+        for (const cookie of cookies) {
+          const [name, value] = cookie.split('=');
+          if (name === 'token') {
+            token = value;
+            break;
+          }
+        }
+      }
+    }
 
     this.state.acceptWebSocket(server, [connId]);
 
@@ -62,6 +77,11 @@ export class SignalingDO implements DurableObject {
         connection.userId = keyData.userId;
         connection.appId = keyData.appId;
       }
+    }
+
+    // Store token from cookie/query for browser auto-auth
+    if (!isAppConnection && token) {
+      connection.pendingToken = token;
     }
 
     this.connections.set(connId, connection);
@@ -162,9 +182,15 @@ export class SignalingDO implements DurableObject {
       conn.userId = keyData.userId;
       conn.appId = keyData.appId;
       this.send(conn.ws, { type: 'auth_ok', payload: { userId: keyData.userId, type: 'app' } });
-    } else if (conn.type === 'browser' && payload.token) {
+    } else if (conn.type === 'browser') {
+      // Use token from payload or from cookie (pendingToken)
+      const token = payload.token || conn.pendingToken;
+      if (!token) {
+        this.send(conn.ws, { type: 'auth_error', payload: { error: 'Missing token' } });
+        return;
+      }
       // Verify JWT for browser connections
-      const jwtPayload = await this.verifyToken(payload.token);
+      const jwtPayload = await this.verifyToken(token);
       if (!jwtPayload) {
         this.send(conn.ws, { type: 'auth_error', payload: { error: 'Invalid token' } });
         return;

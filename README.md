@@ -67,7 +67,7 @@ npx wrangler secret put JWT_SECRET
 npm run deploy
 ```
 
-デプロイ後のURL: `https://cf-wbrtc-auth.YOUR_SUBDOMAIN.workers.dev`
+デプロイ後のURL: `https://cf-wbrtc-auth.m-tama-ramu.workers.dev`
 
 ## 開発
 

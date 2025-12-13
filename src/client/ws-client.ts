@@ -54,7 +54,7 @@ type EventCallback<T = unknown> = (data: T) => void;
 export class SignalingClient {
   private ws: WebSocket | null = null;
   private wsUrl: string;
-  private token: string;
+  private token: string | null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
   private reconnectTimeout: number | null = null;
@@ -73,7 +73,7 @@ export class SignalingClient {
   public onDisconnected: EventCallback<void> | null = null;
   public onError: EventCallback<{ message: string }> | null = null;
 
-  constructor(wsUrl: string, token: string) {
+  constructor(wsUrl: string, token: string | null = null) {
     this.wsUrl = wsUrl;
     this.token = token;
   }
@@ -90,9 +90,12 @@ export class SignalingClient {
 
     return new Promise((resolve, reject) => {
       try {
-        // Append token as query parameter
+        // Append token as query parameter if provided
+        // Otherwise, httpOnly cookie will be sent automatically
         const url = new URL(this.wsUrl);
-        url.searchParams.set('token', this.token);
+        if (this.token) {
+          url.searchParams.set('token', this.token);
+        }
 
         this.ws = new WebSocket(url.toString());
 

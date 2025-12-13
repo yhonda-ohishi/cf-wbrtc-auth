@@ -2,6 +2,8 @@
 
 interface Env {
 	KV: KVNamespace;
-	GOOGLE_CLIENT_ID: "";
+	GOOGLE_CLIENT_ID: "747065218280-ugkrbgaoik32f5mmi94sso4b0026j3cp.apps.googleusercontent.com";
+	GOOGLE_CLIENT_SECRET: string;
+	JWT_SECRET: string;
 	SIGNALING_DO: DurableObjectNamespace<import("./src/index").SignalingDO>;
 }

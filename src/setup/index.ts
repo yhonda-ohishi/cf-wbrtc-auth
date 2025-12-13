@@ -16,44 +16,139 @@ function getBaseUrl(req: Request): string {
   return `${url.protocol}//${url.host}`;
 }
 
-// Go App calls this to start setup
-setupRoutes.get('/', async (c) => {
-  const callback = c.req.query('callback');
+function isLocalhost(req: Request): boolean {
+  const url = new URL(req.url);
+  return url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+}
 
-  if (!callback) {
-    return c.text('Missing callback URL', 400);
+// 1. POST /setup/init - Initialize setup and return token
+setupRoutes.post('/init', async (c) => {
+  // Generate setup token (UUID)
+  const token = crypto.randomUUID();
+  const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+  // Save to KV
+  await c.env.KV.put(
+    `setup:${token}`,
+    JSON.stringify({
+      status: 'pending',
+      expiresAt,
+    }),
+    { expirationTtl: 300 } // Auto-expire after 5 minutes
+  );
+
+  const baseUrl = getBaseUrl(c.req.raw);
+  return c.json({
+    token,
+    url: `${baseUrl}/setup/${token}`,
+  });
+});
+
+// 5. GET /setup/poll - Poll for setup completion status
+// NOTE: This must come before /:token route to avoid matching "poll" as a token
+setupRoutes.get('/poll', async (c) => {
+  const token = c.req.query('token');
+
+  if (!token) {
+    return c.text('Missing token parameter', 400);
   }
 
-  // Store callback URL
-  setCookie(c, 'setup_callback', callback, {
+  // Get setup data from KV
+  const setupData = await c.env.KV.get(`setup:${token}`, 'json');
+
+  if (!setupData) {
+    return c.text('Setup token not found or expired', 404);
+  }
+
+  const data = setupData as {
+    status: string;
+    expiresAt: number;
+    apiKey?: string;
+    appId?: string;
+  };
+
+  // Check expiration
+  if (Date.now() > data.expiresAt) {
+    await c.env.KV.delete(`setup:${token}`);
+    return c.text('Setup token expired', 404);
+  }
+
+  // Return status based on current state
+  if (data.status === 'complete') {
+    return c.json({
+      status: 'complete',
+      apiKey: data.apiKey,
+      appId: data.appId,
+    });
+  } else {
+    return c.json({
+      status: 'pending',
+    });
+  }
+});
+
+// 2. GET /setup/:token - Validate token and redirect to OAuth
+setupRoutes.get('/:token', async (c) => {
+  const token = c.req.param('token');
+
+  // Validate token from KV
+  const setupData = await c.env.KV.get(`setup:${token}`, 'json');
+
+  if (!setupData) {
+    return c.text('Setup token not found or expired', 404);
+  }
+
+  const data = setupData as { status: string; expiresAt: number };
+
+  // Check expiration
+  if (Date.now() > data.expiresAt) {
+    await c.env.KV.delete(`setup:${token}`);
+    return c.text('Setup token expired', 404);
+  }
+
+  // Store token in cookie for later use
+  const secure = !isLocalhost(c.req.raw);
+  setCookie(c, 'setup_token', token, {
     httpOnly: true,
-    secure: true,
+    secure,
     sameSite: 'Lax',
-    maxAge: 600,
+    maxAge: 600, // 10 minutes
     path: '/',
   });
 
-  // Redirect to OAuth with return to /setup/complete
+  // Redirect to OAuth with return to /setup/:token/complete
   const baseUrl = getBaseUrl(c.req.raw);
-  return c.redirect(`${baseUrl}/auth/login?return=/setup/complete`);
+  return c.redirect(`${baseUrl}/auth/login?return=/setup/${token}/complete`);
 });
 
-// After OAuth, show app registration form
-setupRoutes.get('/complete', async (c) => {
-  const token = getCookie(c, 'token');
-  const callback = getCookie(c, 'setup_callback');
+// 3. GET /setup/:token/complete - Show app registration form after OAuth
+setupRoutes.get('/:token/complete', async (c) => {
+  const token = c.req.param('token');
+  const jwtToken = getCookie(c, 'token');
+  const setupToken = getCookie(c, 'setup_token') || token;
 
-  if (!token) {
+  // Check JWT authentication
+  if (!jwtToken) {
     return c.text('Not authenticated', 401);
   }
 
-  if (!callback) {
-    return c.text('Setup session expired', 400);
-  }
-
-  const payload = await verifyJWT(token, c.env.JWT_SECRET);
+  const payload = await verifyJWT(jwtToken, c.env.JWT_SECRET);
   if (!payload) {
     return c.text('Invalid token', 401);
+  }
+
+  // Validate setup token
+  const setupData = await c.env.KV.get(`setup:${setupToken}`, 'json');
+  if (!setupData) {
+    return c.text('Setup token not found or expired', 404);
+  }
+
+  const data = setupData as { status: string; expiresAt: number };
+
+  // Check expiration
+  if (Date.now() > data.expiresAt) {
+    await c.env.KV.delete(`setup:${setupToken}`);
+    return c.text('Setup token expired', 404);
   }
 
   // Return HTML form for app registration
@@ -79,7 +174,7 @@ setupRoutes.get('/complete', async (c) => {
   <h1>App Registration</h1>
   <p>Welcome, ${payload.name}!</p>
 
-  <form method="POST" action="/setup/register">
+  <form method="POST" action="/setup/${setupToken}/register">
     <label for="name">App Name</label>
     <input type="text" id="name" name="name" placeholder="e.g., My PC" required>
 
@@ -100,20 +195,37 @@ setupRoutes.get('/complete', async (c) => {
   `);
 });
 
-// Handle app registration form submission
-setupRoutes.post('/register', async (c) => {
-  const token = getCookie(c, 'token');
-  const callback = getCookie(c, 'setup_callback');
+// 4. POST /setup/:token/register - Handle app registration
+setupRoutes.post('/:token/register', async (c) => {
+  const token = c.req.param('token');
+  const jwtToken = getCookie(c, 'token');
+  const setupToken = getCookie(c, 'setup_token') || token;
 
-  if (!token || !callback) {
-    return c.text('Session expired', 400);
+  // Check JWT authentication
+  if (!jwtToken) {
+    return c.text('Not authenticated', 401);
   }
 
-  const payload = await verifyJWT(token, c.env.JWT_SECRET);
+  const payload = await verifyJWT(jwtToken, c.env.JWT_SECRET);
   if (!payload) {
     return c.text('Invalid token', 401);
   }
 
+  // Validate setup token
+  const setupData = await c.env.KV.get(`setup:${setupToken}`, 'json');
+  if (!setupData) {
+    return c.text('Setup token not found or expired', 404);
+  }
+
+  const data = setupData as { status: string; expiresAt: number };
+
+  // Check expiration
+  if (Date.now() > data.expiresAt) {
+    await c.env.KV.delete(`setup:${setupToken}`);
+    return c.text('Setup token expired', 404);
+  }
+
+  // Get form data
   const formData = await c.req.formData();
   const name = formData.get('name') as string;
   const capabilities = formData.getAll('capabilities') as string[];
@@ -153,15 +265,60 @@ setupRoutes.post('/register', async (c) => {
   apps.push(appId);
   await c.env.KV.put(`user:${payload.sub}:apps`, JSON.stringify(apps));
 
+  // Update setup status to complete
+  await c.env.KV.put(
+    `setup:${setupToken}`,
+    JSON.stringify({
+      status: 'complete',
+      apiKey,
+      appId,
+      expiresAt: data.expiresAt,
+    }),
+    { expirationTtl: 300 } // Keep for 5 more minutes for polling
+  );
+
   // Clear setup cookie
-  deleteCookie(c, 'setup_callback');
+  deleteCookie(c, 'setup_token');
 
-  // Redirect to Go App callback with API key
-  const redirectUrl = new URL(callback);
-  redirectUrl.searchParams.set('apikey', apiKey);
-  redirectUrl.searchParams.set('appid', appId);
-
-  return c.redirect(redirectUrl.toString());
+  // Show completion page
+  return c.html(`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Setup Complete</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 400px;
+      margin: 50px auto;
+      padding: 20px;
+      text-align: center;
+    }
+    h1 {
+      font-size: 1.5rem;
+      color: #38a169;
+    }
+    p {
+      margin: 20px 0;
+      color: #666;
+    }
+    .success-icon {
+      font-size: 4rem;
+      color: #38a169;
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="success-icon">✓</div>
+  <h1>Setup Complete!</h1>
+  <p>Your app has been successfully registered.</p>
+  <p>You can now close this window.</p>
+</body>
+</html>
+  `);
 });
 
 function generateApiKey(): string {

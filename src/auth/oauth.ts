@@ -16,15 +16,21 @@ function getBaseUrl(req: Request): string {
   return `${url.protocol}//${url.host}`;
 }
 
+function isLocalhost(req: Request): boolean {
+  const url = new URL(req.url);
+  return url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+}
+
 authRoutes.get('/login', async (c) => {
   const baseUrl = getBaseUrl(c.req.raw);
   const redirectUri = `${baseUrl}/auth/callback`;
 
   // Store state for CSRF protection
   const state = crypto.randomUUID();
+  const secure = !isLocalhost(c.req.raw);
   setCookie(c, 'oauth_state', state, {
     httpOnly: true,
-    secure: true,
+    secure,
     sameSite: 'Lax',
     maxAge: 600,
     path: '/',
@@ -34,7 +40,7 @@ authRoutes.get('/login', async (c) => {
   const returnUrl = c.req.query('return') || '/';
   setCookie(c, 'oauth_return', returnUrl, {
     httpOnly: true,
-    secure: true,
+    secure,
     sameSite: 'Lax',
     maxAge: 600,
     path: '/',
@@ -128,9 +134,10 @@ authRoutes.get('/callback', async (c) => {
     86400 * 7 // 7 days
   );
 
+  const secure = !isLocalhost(c.req.raw);
   setCookie(c, 'token', jwt, {
     httpOnly: true,
-    secure: true,
+    secure,
     sameSite: 'Lax',
     maxAge: 86400 * 7,
     path: '/',

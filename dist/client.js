@@ -1,27 +1,886 @@
-var m=Object.defineProperty;var C=(o,e,t)=>e in o?m(o,e,{enumerable:!0,configurable:!0,writable:!0,value:t}):o[e]=t;var s=(o,e,t)=>C(o,typeof e!="symbol"?e+"":e,t);var c=class{constructor(e,t){s(this,"ws",null);s(this,"wsUrl");s(this,"token");s(this,"reconnectAttempts",0);s(this,"maxReconnectAttempts",10);s(this,"reconnectTimeout",null);s(this,"isManualDisconnect",!1);s(this,"isAuthenticated",!1);s(this,"onAuthenticated",null);s(this,"onAuthError",null);s(this,"onAppStatus",null);s(this,"onAppsListReceived",null);s(this,"onOffer",null);s(this,"onAnswer",null);s(this,"onIce",null);s(this,"onConnected",null);s(this,"onDisconnected",null);s(this,"onError",null);this.wsUrl=e,this.token=t}async connect(){if(!(this.ws?.readyState===WebSocket.OPEN||this.ws?.readyState===WebSocket.CONNECTING))return this.isManualDisconnect=!1,new Promise((e,t)=>{try{let i=new URL(this.wsUrl);i.searchParams.set("token",this.token),this.ws=new WebSocket(i.toString()),this.ws.onopen=()=>{this.reconnectAttempts=0,this.onConnected?.(),this.sendAuth(),e()},this.ws.onmessage=n=>{this.handleMessage(n.data)},this.ws.onerror=n=>{console.error("WebSocket error:",n),this.onError?.({message:"WebSocket error occurred"}),t(new Error("WebSocket connection error"))},this.ws.onclose=n=>{this.isAuthenticated=!1,this.onDisconnected?.(),this.isManualDisconnect||this.scheduleReconnect()}}catch(i){t(i)}})}disconnect(){this.isManualDisconnect=!0,this.isAuthenticated=!1,this.reconnectTimeout!==null&&(clearTimeout(this.reconnectTimeout),this.reconnectTimeout=null),this.ws&&(this.ws.close(),this.ws=null)}isConnected(){return this.ws?.readyState===WebSocket.OPEN&&this.isAuthenticated}sendAuth(){this.send({type:"auth",payload:{token:this.token}})}sendOffer(e,t){this.send({type:"offer",payload:{targetAppId:e,sdp:t}})}sendAnswer(e){this.send({type:"answer",payload:{sdp:e}})}sendIce(e,t){this.send({type:"ice",payload:{candidate:e,targetAppId:t}})}getApps(){this.send({type:"get_apps",payload:{}})}send(e){if(this.ws?.readyState!==WebSocket.OPEN){console.error("WebSocket is not open. Cannot send message:",e);return}try{this.ws.send(JSON.stringify(e))}catch(t){console.error("Failed to send message:",t),this.onError?.({message:"Failed to send message"})}}handleMessage(e){try{let t=JSON.parse(e);switch(t.type){case"auth_ok":this.isAuthenticated=!0,this.onAuthenticated?.(t.payload);break;case"auth_error":this.isAuthenticated=!1,this.onAuthError?.(t.payload);break;case"apps_list":this.onAppsListReceived?.(t.payload);break;case"app_status":this.onAppStatus?.(t.payload);break;case"offer":this.onOffer?.(t.payload);break;case"answer":this.onAnswer?.(t.payload);break;case"ice":this.onIce?.(t.payload);break;case"error":this.onError?.(t.payload);break;default:console.warn("Unknown message type:",t.type)}}catch(t){console.error("Failed to parse message:",t),this.onError?.({message:"Failed to parse server message"})}}scheduleReconnect(){if(this.reconnectAttempts>=this.maxReconnectAttempts){console.error("Max reconnection attempts reached"),this.onError?.({message:"Failed to reconnect after multiple attempts"});return}let e=Math.min(1e3*Math.pow(2,this.reconnectAttempts),3e4);this.reconnectAttempts++,console.log(`Reconnecting in ${e}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`),this.reconnectTimeout=window.setTimeout(()=>{this.connect().catch(t=>{console.error("Reconnection failed:",t)})},e)}updateToken(e){this.token=e,this.ws?.readyState===WebSocket.OPEN&&(this.disconnect(),this.connect().catch(t=>{console.error("Failed to reconnect with new token:",t)}))}};var v=[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"}],l=class{constructor(e,t=v){s(this,"signalingClient");s(this,"peerConnections",new Map);s(this,"iceServers");s(this,"onDataChannelOpen",null);s(this,"onDataChannelClose",null);s(this,"onDataChannelMessage",null);s(this,"onConnectionStateChange",null);s(this,"onError",null);this.signalingClient=e,this.iceServers=t,this.setupSignalingHandlers()}setupSignalingHandlers(){this.signalingClient.onAnswer=e=>{let{sdp:t,appId:i}=e;this.handleAnswer(i,t)},this.signalingClient.onIce=e=>{let{candidate:t,appId:i}=e;i&&this.handleIceCandidate(i,t)},this.signalingClient.onAppStatus=e=>{e.status==="offline"&&this.disconnect(e.appId)}}async connectToApp(e){if(this.peerConnections.has(e)){let a=this.peerConnections.get(e);if(a.dataChannel?.readyState==="open")return a.dataChannel;this.disconnect(e)}let t=new RTCPeerConnection({iceServers:this.iceServers}),i=t.createDataChannel("data",{ordered:!0}),n={pc:t,dataChannel:i,appId:e};this.peerConnections.set(e,n),this.setupPeerConnectionHandlers(e,t),this.setupDataChannelHandlers(e,i);try{let a=await t.createOffer();return await t.setLocalDescription(a),this.signalingClient.sendOffer(e,a.sdp),new Promise((r,p)=>{let h=setTimeout(()=>{p(new Error("Data channel connection timeout")),this.disconnect(e)},3e4);i.onopen=()=>{clearTimeout(h),this.onDataChannelOpen?.({appId:e}),r(i)},i.onerror=g=>{clearTimeout(h),this.onError?.({appId:e,message:`Data channel error: ${g}`}),p(g)}})}catch(a){throw this.disconnect(e),this.onError?.({appId:e,message:`Failed to create offer: ${a}`}),a}}disconnect(e){if(e){let t=this.peerConnections.get(e);t&&(this.closePeerConnection(t),this.peerConnections.delete(e))}else{for(let[t,i]of this.peerConnections.entries())this.closePeerConnection(i);this.peerConnections.clear()}}sendMessage(e,t){let i=this.peerConnections.get(e);if(!i?.dataChannel){this.onError?.({appId:e,message:"No data channel available for this app"});return}if(i.dataChannel.readyState!=="open"){this.onError?.({appId:e,message:`Data channel is not open (state: ${i.dataChannel.readyState})`});return}try{i.dataChannel.send(t)}catch(n){this.onError?.({appId:e,message:`Failed to send message: ${n}`})}}getConnectionState(e){return this.peerConnections.get(e)?.pc.connectionState||null}getDataChannelState(e){return this.peerConnections.get(e)?.dataChannel?.readyState||null}getConnectedApps(){return Array.from(this.peerConnections.keys()).filter(e=>this.peerConnections.get(e)?.dataChannel?.readyState==="open")}async handleAnswer(e,t){let i=this.peerConnections.get(e);if(!i){console.warn(`Received answer for unknown app: ${e}`);return}try{let n=new RTCSessionDescription({type:"answer",sdp:t});await i.pc.setRemoteDescription(n)}catch(n){this.onError?.({appId:e,message:`Failed to set remote description: ${n}`})}}async handleIceCandidate(e,t){let i=this.peerConnections.get(e);if(!i){console.warn(`Received ICE candidate for unknown app: ${e}`);return}try{await i.pc.addIceCandidate(t)}catch(n){this.onError?.({appId:e,message:`Failed to add ICE candidate: ${n}`})}}setupPeerConnectionHandlers(e,t){t.onicecandidate=i=>{i.candidate&&this.signalingClient.sendIce(i.candidate,e)},t.onconnectionstatechange=()=>{let i=t.connectionState;this.onConnectionStateChange?.({appId:e,state:i}),(i==="failed"||i==="closed")&&this.disconnect(e)},t.oniceconnectionstatechange=()=>{let i=t.iceConnectionState;(i==="failed"||i==="closed")&&this.onError?.({appId:e,message:`ICE connection ${i}`})},t.ondatachannel=i=>{console.warn("Unexpected data channel from remote peer:",i.channel.label)}}setupDataChannelHandlers(e,t){t.onopen=()=>{this.onDataChannelOpen?.({appId:e})},t.onclose=()=>{this.onDataChannelClose?.({appId:e})},t.onmessage=i=>{this.onDataChannelMessage?.({appId:e,data:i.data})},t.onerror=i=>{this.onError?.({appId:e,message:`Data channel error: ${i}`})}}closePeerConnection(e){let{pc:t,dataChannel:i,appId:n}=e;if(i)try{i.close()}catch(a){console.error("Error closing data channel:",a)}try{t.close()}catch(a){console.error("Error closing peer connection:",a)}this.onDataChannelClose?.({appId:n})}};var d=class{constructor(){s(this,"signalingClient",null);s(this,"webrtcClient",null);s(this,"apps",new Map);s(this,"userInfo",null);s(this,"messageLog",[]);s(this,"loginSection");s(this,"userSection");s(this,"appListSection");s(this,"connectionSection");s(this,"messageSection");s(this,"userEmailSpan");s(this,"appListDiv");s(this,"messageLogDiv");s(this,"wsStatusSpan");s(this,"logoutBtn");this.initializeDOM(),this.checkAuthStatus()}initializeDOM(){this.loginSection=document.getElementById("login-section"),this.userSection=document.getElementById("user-section"),this.appListSection=document.getElementById("app-list-section"),this.connectionSection=document.getElementById("connection-section"),this.messageSection=document.getElementById("message-section"),this.userEmailSpan=document.getElementById("user-email"),this.appListDiv=document.getElementById("app-list"),this.messageLogDiv=document.getElementById("message-log"),this.wsStatusSpan=document.getElementById("ws-status"),this.logoutBtn=document.getElementById("logout-btn"),this.logoutBtn.addEventListener("click",()=>this.handleLogout()),document.getElementById("login-btn")?.addEventListener("click",()=>this.handleLogin()),document.getElementById("refresh-apps-btn")?.addEventListener("click",()=>this.refreshApps()),document.getElementById("send-message-btn")?.addEventListener("click",()=>this.handleSendMessage()),document.getElementById("clear-log-btn")?.addEventListener("click",()=>this.clearMessageLog())}async checkAuthStatus(){try{let e=this.getToken();if(!e){this.showLogin();return}let t=await fetch("/api/me",{headers:{Authorization:`Bearer ${e}`}});t.ok?(this.userInfo=await t.json(),this.showUserInterface(),this.initializeWebSocket(e)):(this.clearToken(),this.showLogin())}catch(e){console.error("Auth check failed:",e),this.showLogin()}}getToken(){let e=document.cookie.split(";");for(let t of e){let[i,n]=t.trim().split("=");if(i==="auth_token")return n}return localStorage.getItem("auth_token")}clearToken(){document.cookie="auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;",localStorage.removeItem("auth_token")}showLogin(){this.loginSection.style.display="block",this.userSection.style.display="none",this.appListSection.style.display="none",this.connectionSection.style.display="none",this.messageSection.style.display="none"}showUserInterface(){this.loginSection.style.display="none",this.userSection.style.display="block",this.appListSection.style.display="block",this.connectionSection.style.display="block",this.messageSection.style.display="block",this.userInfo&&(this.userEmailSpan.textContent=this.userInfo.email)}handleLogin(){window.location.href="/auth/login"}handleLogout(){this.clearToken(),this.signalingClient&&this.signalingClient.disconnect(),this.webrtcClient&&this.webrtcClient.disconnect(),this.showLogin()}async initializeWebSocket(e){let i=`${window.location.protocol==="https:"?"wss:":"ws:"}//${window.location.host}/ws`;this.signalingClient=new c(i,e),this.signalingClient.onConnected=()=>{this.updateWSStatus("connected")},this.signalingClient.onDisconnected=()=>{this.updateWSStatus("disconnected")},this.signalingClient.onAuthenticated=n=>{console.log("Authenticated:",n),this.updateWSStatus("authenticated"),this.signalingClient?.getApps()},this.signalingClient.onAuthError=n=>{console.error("Auth error:",n),this.updateWSStatus("error"),alert("Authentication failed: "+n.error),this.handleLogout()},this.signalingClient.onAppsListReceived=n=>{console.log("Apps list received:",n),n.apps.forEach(a=>{this.apps.set(a.appId,{id:a.appId,name:a.name,capabilities:a.capabilities,status:a.status})}),this.renderAppList()},this.signalingClient.onAppStatus=n=>{console.log("App status update:",n);let a=this.apps.get(n.appId);a?(a.status=n.status,n.name&&(a.name=n.name),n.capabilities&&(a.capabilities=n.capabilities)):this.apps.set(n.appId,{id:n.appId,name:n.name||n.appId,capabilities:n.capabilities,status:n.status}),this.renderAppList()},this.signalingClient.onError=n=>{console.error("WebSocket error:",n),this.addLog("System","Error: "+n.message,"received")},this.webrtcClient=new l(this.signalingClient),this.webrtcClient.onDataChannelOpen=({appId:n})=>{console.log("Data channel opened:",n),this.addLog(n,"Connection established","received"),this.renderAppList()},this.webrtcClient.onDataChannelClose=({appId:n})=>{console.log("Data channel closed:",n),this.addLog(n,"Connection closed","received"),this.renderAppList()},this.webrtcClient.onDataChannelMessage=({appId:n,data:a})=>{console.log("Message from app:",n,a);let r=typeof a=="string"?a:`[Binary data: ${a.byteLength} bytes]`;this.addLog(n,r,"received")},this.webrtcClient.onConnectionStateChange=({appId:n,state:a})=>{console.log("Connection state change:",n,a),this.renderAppList()},this.webrtcClient.onError=({appId:n,message:a})=>{console.error("WebRTC error:",n,a),this.addLog(n||"System","Error: "+a,"received")};try{await this.signalingClient.connect()}catch(n){console.error("Failed to connect to WebSocket:",n),this.updateWSStatus("error")}}updateWSStatus(e){this.wsStatusSpan.textContent=e,this.wsStatusSpan.className=`status-${e}`}async refreshApps(){if(this.signalingClient?.isConnected())this.signalingClient.getApps();else try{let e=this.getToken(),t=await fetch("/api/apps",{headers:{Authorization:`Bearer ${e}`}});if(t.ok){let i=await t.json();this.apps.clear(),i.apps.forEach(n=>{this.apps.set(n.id,{id:n.id,name:n.name,capabilities:n.capabilities,status:"offline"})}),this.renderAppList()}}catch(e){console.error("Failed to fetch apps:",e)}}renderAppList(){let e=Array.from(this.apps.values());if(e.length===0){this.appListDiv.innerHTML='<p class="no-apps">No apps registered. Register an app to get started.</p>';return}this.appListDiv.innerHTML=e.map(t=>{let i=t.status==="online",n=this.webrtcClient?.getConnectionState(t.id),a=this.webrtcClient?.getDataChannelState(t.id),r=a==="open";return`
-        <div class="app-card ${i?"online":"offline"}">
+"use strict";
+var ClientUI = (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    }
+    return to;
+  };
+  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+  // src/client/ui.ts
+  var ui_exports = {};
+  __export(ui_exports, {
+    initializeUI: () => initializeUI
+  });
+
+  // src/client/ws-client.ts
+  var SignalingClient = class {
+    ws = null;
+    wsUrl;
+    token;
+    reconnectAttempts = 0;
+    maxReconnectAttempts = 10;
+    reconnectTimeout = null;
+    isManualDisconnect = false;
+    isAuthenticated = false;
+    // Event callbacks
+    onAuthenticated = null;
+    onAuthError = null;
+    onAppStatus = null;
+    onAppsListReceived = null;
+    onOffer = null;
+    onAnswer = null;
+    onIce = null;
+    onConnected = null;
+    onDisconnected = null;
+    onError = null;
+    constructor(wsUrl, token = null) {
+      this.wsUrl = wsUrl;
+      this.token = token;
+    }
+    /**
+     * Connect to the WebSocket signaling server
+     */
+    async connect() {
+      if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) {
+        return;
+      }
+      this.isManualDisconnect = false;
+      return new Promise((resolve, reject) => {
+        try {
+          const url = new URL(this.wsUrl);
+          if (this.token) {
+            url.searchParams.set("token", this.token);
+          }
+          this.ws = new WebSocket(url.toString());
+          this.ws.onopen = () => {
+            this.reconnectAttempts = 0;
+            this.onConnected?.();
+            this.sendAuth();
+            resolve();
+          };
+          this.ws.onmessage = (event) => {
+            this.handleMessage(event.data);
+          };
+          this.ws.onerror = (event) => {
+            console.error("WebSocket error:", event);
+            this.onError?.({ message: "WebSocket error occurred" });
+            reject(new Error("WebSocket connection error"));
+          };
+          this.ws.onclose = (event) => {
+            this.isAuthenticated = false;
+            this.onDisconnected?.();
+            if (!this.isManualDisconnect) {
+              this.scheduleReconnect();
+            }
+          };
+        } catch (error) {
+          reject(error);
+        }
+      });
+    }
+    /**
+     * Disconnect from the WebSocket server
+     */
+    disconnect() {
+      this.isManualDisconnect = true;
+      this.isAuthenticated = false;
+      if (this.reconnectTimeout !== null) {
+        clearTimeout(this.reconnectTimeout);
+        this.reconnectTimeout = null;
+      }
+      if (this.ws) {
+        this.ws.close();
+        this.ws = null;
+      }
+    }
+    /**
+     * Check if the client is connected and authenticated
+     */
+    isConnected() {
+      return this.ws?.readyState === WebSocket.OPEN && this.isAuthenticated;
+    }
+    /**
+     * Send authentication message
+     */
+    sendAuth() {
+      this.send({
+        type: "auth",
+        payload: { token: this.token }
+      });
+    }
+    /**
+     * Send WebRTC offer to a specific app
+     */
+    sendOffer(targetAppId, sdp) {
+      this.send({
+        type: "offer",
+        payload: { targetAppId, sdp }
+      });
+    }
+    /**
+     * Send WebRTC answer
+     */
+    sendAnswer(sdp) {
+      this.send({
+        type: "answer",
+        payload: { sdp }
+      });
+    }
+    /**
+     * Send ICE candidate
+     */
+    sendIce(candidate, targetAppId) {
+      this.send({
+        type: "ice",
+        payload: { candidate, targetAppId }
+      });
+    }
+    /**
+     * Request list of online apps
+     */
+    getApps() {
+      this.send({
+        type: "get_apps",
+        payload: {}
+      });
+    }
+    /**
+     * Send a message to the server
+     */
+    send(message) {
+      if (this.ws?.readyState !== WebSocket.OPEN) {
+        console.error("WebSocket is not open. Cannot send message:", message);
+        return;
+      }
+      try {
+        this.ws.send(JSON.stringify(message));
+      } catch (error) {
+        console.error("Failed to send message:", error);
+        this.onError?.({ message: "Failed to send message" });
+      }
+    }
+    /**
+     * Handle incoming WebSocket messages
+     */
+    handleMessage(data) {
+      try {
+        const message = JSON.parse(data);
+        switch (message.type) {
+          case "auth_ok":
+            this.isAuthenticated = true;
+            this.onAuthenticated?.(message.payload);
+            break;
+          case "auth_error":
+            this.isAuthenticated = false;
+            this.onAuthError?.(message.payload);
+            break;
+          case "apps_list":
+            this.onAppsListReceived?.(message.payload);
+            break;
+          case "app_status":
+            this.onAppStatus?.(message.payload);
+            break;
+          case "offer":
+            this.onOffer?.(message.payload);
+            break;
+          case "answer":
+            this.onAnswer?.(message.payload);
+            break;
+          case "ice":
+            this.onIce?.(message.payload);
+            break;
+          case "error":
+            this.onError?.(message.payload);
+            break;
+          default:
+            console.warn("Unknown message type:", message.type);
+        }
+      } catch (error) {
+        console.error("Failed to parse message:", error);
+        this.onError?.({ message: "Failed to parse server message" });
+      }
+    }
+    /**
+     * Schedule reconnection with exponential backoff
+     */
+    scheduleReconnect() {
+      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+        console.error("Max reconnection attempts reached");
+        this.onError?.({ message: "Failed to reconnect after multiple attempts" });
+        return;
+      }
+      const delay = Math.min(1e3 * Math.pow(2, this.reconnectAttempts), 3e4);
+      this.reconnectAttempts++;
+      console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+      this.reconnectTimeout = window.setTimeout(() => {
+        this.connect().catch((error) => {
+          console.error("Reconnection failed:", error);
+        });
+      }, delay);
+    }
+    /**
+     * Update the JWT token (useful for token refresh)
+     */
+    updateToken(token) {
+      this.token = token;
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.disconnect();
+        this.connect().catch((error) => {
+          console.error("Failed to reconnect with new token:", error);
+        });
+      }
+    }
+  };
+
+  // src/client/webrtc-client.ts
+  var DEFAULT_ICE_SERVERS = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" }
+  ];
+  var WebRTCClient = class {
+    signalingClient;
+    peerConnections = /* @__PURE__ */ new Map();
+    iceServers;
+    // Event callbacks
+    onDataChannelOpen = null;
+    onDataChannelClose = null;
+    onDataChannelMessage = null;
+    onConnectionStateChange = null;
+    onError = null;
+    constructor(signalingClient, iceServers = DEFAULT_ICE_SERVERS) {
+      this.signalingClient = signalingClient;
+      this.iceServers = iceServers;
+      this.setupSignalingHandlers();
+    }
+    /**
+     * Set up handlers for signaling messages
+     */
+    setupSignalingHandlers() {
+      this.signalingClient.onAnswer = (payload) => {
+        const { sdp, appId } = payload;
+        this.handleAnswer(appId, sdp);
+      };
+      this.signalingClient.onIce = (payload) => {
+        const { candidate, appId } = payload;
+        if (appId) {
+          this.handleIceCandidate(appId, candidate);
+        }
+      };
+      this.signalingClient.onAppStatus = (payload) => {
+        if (payload.status === "offline") {
+          this.disconnect(payload.appId);
+        }
+      };
+    }
+    /**
+     * Connect to a specific app by creating an offer
+     */
+    async connectToApp(appId) {
+      if (this.peerConnections.has(appId)) {
+        const existing = this.peerConnections.get(appId);
+        if (existing.dataChannel?.readyState === "open") {
+          return existing.dataChannel;
+        }
+        this.disconnect(appId);
+      }
+      const pc = new RTCPeerConnection({
+        iceServers: this.iceServers
+      });
+      const dataChannel = pc.createDataChannel("data", {
+        ordered: true
+      });
+      const peerConnection = {
+        pc,
+        dataChannel,
+        appId
+      };
+      this.peerConnections.set(appId, peerConnection);
+      this.setupPeerConnectionHandlers(appId, pc);
+      this.setupDataChannelHandlers(appId, dataChannel);
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        this.signalingClient.sendOffer(appId, offer.sdp);
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error("Data channel connection timeout"));
+            this.disconnect(appId);
+          }, 3e4);
+          dataChannel.onopen = () => {
+            clearTimeout(timeout);
+            this.onDataChannelOpen?.({ appId });
+            resolve(dataChannel);
+          };
+          dataChannel.onerror = (error) => {
+            clearTimeout(timeout);
+            this.onError?.({
+              appId,
+              message: `Data channel error: ${error}`
+            });
+            reject(error);
+          };
+        });
+      } catch (error) {
+        this.disconnect(appId);
+        this.onError?.({
+          appId,
+          message: `Failed to create offer: ${error}`
+        });
+        throw error;
+      }
+    }
+    /**
+     * Disconnect from a specific app or all apps
+     */
+    disconnect(appId) {
+      if (appId) {
+        const peerConnection = this.peerConnections.get(appId);
+        if (peerConnection) {
+          this.closePeerConnection(peerConnection);
+          this.peerConnections.delete(appId);
+        }
+      } else {
+        for (const [id, pc] of this.peerConnections.entries()) {
+          this.closePeerConnection(pc);
+        }
+        this.peerConnections.clear();
+      }
+    }
+    /**
+     * Send a message to a specific app
+     */
+    sendMessage(appId, data) {
+      const peerConnection = this.peerConnections.get(appId);
+      if (!peerConnection?.dataChannel) {
+        this.onError?.({
+          appId,
+          message: "No data channel available for this app"
+        });
+        return;
+      }
+      if (peerConnection.dataChannel.readyState !== "open") {
+        this.onError?.({
+          appId,
+          message: `Data channel is not open (state: ${peerConnection.dataChannel.readyState})`
+        });
+        return;
+      }
+      try {
+        peerConnection.dataChannel.send(data);
+      } catch (error) {
+        this.onError?.({
+          appId,
+          message: `Failed to send message: ${error}`
+        });
+      }
+    }
+    /**
+     * Get connection state for a specific app
+     */
+    getConnectionState(appId) {
+      const peerConnection = this.peerConnections.get(appId);
+      return peerConnection?.pc.connectionState || null;
+    }
+    /**
+     * Get data channel state for a specific app
+     */
+    getDataChannelState(appId) {
+      const peerConnection = this.peerConnections.get(appId);
+      return peerConnection?.dataChannel?.readyState || null;
+    }
+    /**
+     * Get list of connected app IDs
+     */
+    getConnectedApps() {
+      return Array.from(this.peerConnections.keys()).filter((appId) => {
+        const pc = this.peerConnections.get(appId);
+        return pc?.dataChannel?.readyState === "open";
+      });
+    }
+    /**
+     * Handle incoming answer from app
+     */
+    async handleAnswer(appId, sdp) {
+      const peerConnection = this.peerConnections.get(appId);
+      if (!peerConnection) {
+        console.warn(`Received answer for unknown app: ${appId}`);
+        return;
+      }
+      try {
+        const answer = new RTCSessionDescription({
+          type: "answer",
+          sdp
+        });
+        await peerConnection.pc.setRemoteDescription(answer);
+      } catch (error) {
+        this.onError?.({
+          appId,
+          message: `Failed to set remote description: ${error}`
+        });
+      }
+    }
+    /**
+     * Handle incoming ICE candidate from app
+     */
+    async handleIceCandidate(appId, candidate) {
+      const peerConnection = this.peerConnections.get(appId);
+      if (!peerConnection) {
+        console.warn(`Received ICE candidate for unknown app: ${appId}`);
+        return;
+      }
+      try {
+        await peerConnection.pc.addIceCandidate(candidate);
+      } catch (error) {
+        this.onError?.({
+          appId,
+          message: `Failed to add ICE candidate: ${error}`
+        });
+      }
+    }
+    /**
+     * Set up event handlers for a peer connection
+     */
+    setupPeerConnectionHandlers(appId, pc) {
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          this.signalingClient.sendIce(event.candidate, appId);
+        }
+      };
+      pc.onconnectionstatechange = () => {
+        const state = pc.connectionState;
+        this.onConnectionStateChange?.({ appId, state });
+        if (state === "failed" || state === "closed") {
+          this.disconnect(appId);
+        }
+      };
+      pc.oniceconnectionstatechange = () => {
+        const state = pc.iceConnectionState;
+        if (state === "failed" || state === "closed") {
+          this.onError?.({
+            appId,
+            message: `ICE connection ${state}`
+          });
+        }
+      };
+      pc.ondatachannel = (event) => {
+        console.warn("Unexpected data channel from remote peer:", event.channel.label);
+      };
+    }
+    /**
+     * Set up event handlers for a data channel
+     */
+    setupDataChannelHandlers(appId, dataChannel) {
+      dataChannel.onopen = () => {
+        this.onDataChannelOpen?.({ appId });
+      };
+      dataChannel.onclose = () => {
+        this.onDataChannelClose?.({ appId });
+      };
+      dataChannel.onmessage = (event) => {
+        this.onDataChannelMessage?.({
+          appId,
+          data: event.data
+        });
+      };
+      dataChannel.onerror = (error) => {
+        this.onError?.({
+          appId,
+          message: `Data channel error: ${error}`
+        });
+      };
+    }
+    /**
+     * Close a peer connection and clean up resources
+     */
+    closePeerConnection(peerConnection) {
+      const { pc, dataChannel, appId } = peerConnection;
+      if (dataChannel) {
+        try {
+          dataChannel.close();
+        } catch (error) {
+          console.error("Error closing data channel:", error);
+        }
+      }
+      try {
+        pc.close();
+      } catch (error) {
+        console.error("Error closing peer connection:", error);
+      }
+      this.onDataChannelClose?.({ appId });
+    }
+  };
+
+  // src/client/ui.ts
+  var UIManager = class {
+    signalingClient = null;
+    webrtcClient = null;
+    apps = /* @__PURE__ */ new Map();
+    userInfo = null;
+    messageLog = [];
+    // DOM Elements
+    loginSection;
+    userSection;
+    appListSection;
+    connectionSection;
+    messageSection;
+    userEmailSpan;
+    appListDiv;
+    messageLogDiv;
+    wsStatusSpan;
+    logoutBtn;
+    constructor() {
+      this.initializeDOM();
+      this.checkAuthStatus();
+    }
+    initializeDOM() {
+      this.loginSection = document.getElementById("login-section");
+      this.userSection = document.getElementById("user-section");
+      this.appListSection = document.getElementById("app-list-section");
+      this.connectionSection = document.getElementById("connection-section");
+      this.messageSection = document.getElementById("message-section");
+      this.userEmailSpan = document.getElementById("user-email");
+      this.appListDiv = document.getElementById("app-list");
+      this.messageLogDiv = document.getElementById("message-log");
+      this.wsStatusSpan = document.getElementById("ws-status");
+      this.logoutBtn = document.getElementById("logout-btn");
+      this.logoutBtn.addEventListener("click", () => this.handleLogout());
+      document.getElementById("login-btn")?.addEventListener("click", () => this.handleLogin());
+      document.getElementById("refresh-apps-btn")?.addEventListener("click", () => this.refreshApps());
+      document.getElementById("send-message-btn")?.addEventListener("click", () => this.handleSendMessage());
+      document.getElementById("clear-log-btn")?.addEventListener("click", () => this.clearMessageLog());
+    }
+    async checkAuthStatus() {
+      try {
+        const response = await fetch("/api/me");
+        if (response.ok) {
+          this.userInfo = await response.json();
+          this.showUserInterface();
+          this.initializeWebSocket();
+        } else {
+          this.showLogin();
+        }
+      } catch (error) {
+        console.error("Auth check failed:", error);
+        this.showLogin();
+      }
+    }
+    getToken() {
+      const cookies = document.cookie.split(";");
+      for (const cookie of cookies) {
+        const [name, value] = cookie.trim().split("=");
+        if (name === "token") {
+          return value;
+        }
+      }
+      return localStorage.getItem("token");
+    }
+    clearToken() {
+      document.cookie = "token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+      localStorage.removeItem("token");
+    }
+    showLogin() {
+      this.loginSection.style.display = "block";
+      this.userSection.style.display = "none";
+      this.appListSection.style.display = "none";
+      this.connectionSection.style.display = "none";
+      this.messageSection.style.display = "none";
+    }
+    showUserInterface() {
+      this.loginSection.style.display = "none";
+      this.userSection.style.display = "block";
+      this.appListSection.style.display = "block";
+      this.connectionSection.style.display = "block";
+      this.messageSection.style.display = "block";
+      if (this.userInfo) {
+        this.userEmailSpan.textContent = this.userInfo.email;
+      }
+    }
+    handleLogin() {
+      window.location.href = "/auth/login";
+    }
+    handleLogout() {
+      this.clearToken();
+      if (this.signalingClient) {
+        this.signalingClient.disconnect();
+      }
+      if (this.webrtcClient) {
+        this.webrtcClient.disconnect();
+      }
+      this.showLogin();
+    }
+    async initializeWebSocket() {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      this.signalingClient = new SignalingClient(wsUrl);
+      this.signalingClient.onConnected = () => {
+        this.updateWSStatus("connected");
+      };
+      this.signalingClient.onDisconnected = () => {
+        this.updateWSStatus("disconnected");
+      };
+      this.signalingClient.onAuthenticated = (payload) => {
+        console.log("Authenticated:", payload);
+        this.updateWSStatus("authenticated");
+        this.signalingClient?.getApps();
+      };
+      this.signalingClient.onAuthError = (payload) => {
+        console.error("Auth error:", payload);
+        this.updateWSStatus("error");
+        alert("Authentication failed: " + payload.error);
+        this.handleLogout();
+      };
+      this.signalingClient.onAppsListReceived = (payload) => {
+        console.log("Apps list received:", payload);
+        payload.apps.forEach((app) => {
+          this.apps.set(app.appId, {
+            id: app.appId,
+            name: app.name,
+            capabilities: app.capabilities,
+            status: app.status
+          });
+        });
+        this.renderAppList();
+      };
+      this.signalingClient.onAppStatus = (payload) => {
+        console.log("App status update:", payload);
+        const app = this.apps.get(payload.appId);
+        if (app) {
+          app.status = payload.status;
+          if (payload.name) app.name = payload.name;
+          if (payload.capabilities) app.capabilities = payload.capabilities;
+        } else {
+          this.apps.set(payload.appId, {
+            id: payload.appId,
+            name: payload.name || payload.appId,
+            capabilities: payload.capabilities,
+            status: payload.status
+          });
+        }
+        this.renderAppList();
+      };
+      this.signalingClient.onError = (payload) => {
+        console.error("WebSocket error:", payload);
+        this.addLog("System", "Error: " + payload.message, "received");
+      };
+      this.webrtcClient = new WebRTCClient(this.signalingClient);
+      this.webrtcClient.onDataChannelOpen = ({ appId }) => {
+        console.log("Data channel opened:", appId);
+        this.addLog(appId, "Connection established", "received");
+        this.renderAppList();
+      };
+      this.webrtcClient.onDataChannelClose = ({ appId }) => {
+        console.log("Data channel closed:", appId);
+        this.addLog(appId, "Connection closed", "received");
+        this.renderAppList();
+      };
+      this.webrtcClient.onDataChannelMessage = ({ appId, data }) => {
+        console.log("Message from app:", appId, data);
+        const message = typeof data === "string" ? data : `[Binary data: ${data.byteLength} bytes]`;
+        this.addLog(appId, message, "received");
+      };
+      this.webrtcClient.onConnectionStateChange = ({ appId, state }) => {
+        console.log("Connection state change:", appId, state);
+        this.renderAppList();
+      };
+      this.webrtcClient.onError = ({ appId, message }) => {
+        console.error("WebRTC error:", appId, message);
+        this.addLog(appId || "System", "Error: " + message, "received");
+      };
+      try {
+        await this.signalingClient.connect();
+      } catch (error) {
+        console.error("Failed to connect to WebSocket:", error);
+        this.updateWSStatus("error");
+      }
+    }
+    updateWSStatus(status) {
+      this.wsStatusSpan.textContent = status;
+      this.wsStatusSpan.className = `status-${status}`;
+    }
+    async refreshApps() {
+      if (this.signalingClient?.isConnected()) {
+        this.signalingClient.getApps();
+      } else {
+        try {
+          const token = this.getToken();
+          const response = await fetch("/api/apps", {
+            headers: {
+              "Authorization": `Bearer ${token}`
+            }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            this.apps.clear();
+            data.apps.forEach((app) => {
+              this.apps.set(app.id, {
+                id: app.id,
+                name: app.name,
+                capabilities: app.capabilities,
+                status: "offline"
+              });
+            });
+            this.renderAppList();
+          }
+        } catch (error) {
+          console.error("Failed to fetch apps:", error);
+        }
+      }
+    }
+    renderAppList() {
+      const appArray = Array.from(this.apps.values());
+      if (appArray.length === 0) {
+        this.appListDiv.innerHTML = '<p class="no-apps">No apps registered. Register an app to get started.</p>';
+        return;
+      }
+      this.appListDiv.innerHTML = appArray.map((app) => {
+        const isOnline = app.status === "online";
+        const connectionState = this.webrtcClient?.getConnectionState(app.id);
+        const dataChannelState = this.webrtcClient?.getDataChannelState(app.id);
+        const isConnected = dataChannelState === "open";
+        return `
+        <div class="app-card ${isOnline ? "online" : "offline"}">
           <div class="app-header">
-            <span class="app-name">${this.escapeHtml(t.name)}</span>
-            <span class="app-status ${i?"status-online":"status-offline"}">
-              ${i?"\u25CF Online":"\u25CB Offline"}
+            <span class="app-name">${this.escapeHtml(app.name)}</span>
+            <span class="app-status ${isOnline ? "status-online" : "status-offline"}">
+              ${isOnline ? "\u25CF Online" : "\u25CB Offline"}
             </span>
           </div>
           <div class="app-details">
-            <div class="app-id">ID: ${this.escapeHtml(t.id)}</div>
-            ${t.capabilities&&t.capabilities.length>0?`<div class="app-capabilities">Capabilities: ${t.capabilities.join(", ")}</div>`:""}
-            ${n?`<div class="app-connection-state">WebRTC: ${n}</div>`:""}
-            ${a?`<div class="app-datachannel-state">DataChannel: ${a}</div>`:""}
+            <div class="app-id">ID: ${this.escapeHtml(app.id)}</div>
+            ${app.capabilities && app.capabilities.length > 0 ? `<div class="app-capabilities">Capabilities: ${app.capabilities.join(", ")}</div>` : ""}
+            ${connectionState ? `<div class="app-connection-state">WebRTC: ${connectionState}</div>` : ""}
+            ${dataChannelState ? `<div class="app-datachannel-state">DataChannel: ${dataChannelState}</div>` : ""}
           </div>
           <div class="app-actions">
-            ${i&&!r?`<button class="btn btn-primary" onclick="window.uiManager.connectToApp('${t.id}')">Connect</button>`:""}
-            ${r?`<button class="btn btn-danger" onclick="window.uiManager.disconnectFromApp('${t.id}')">Disconnect</button>`:""}
+            ${isOnline && !isConnected ? `<button class="btn btn-primary" onclick="window.uiManager.connectToApp('${app.id}')">Connect</button>` : ""}
+            ${isConnected ? `<button class="btn btn-danger" onclick="window.uiManager.disconnectFromApp('${app.id}')">Disconnect</button>` : ""}
           </div>
         </div>
-      `}).join("")}async connectToApp(e){if(!this.webrtcClient){alert("WebRTC client not initialized");return}try{this.addLog(e,"Connecting...","sent"),await this.webrtcClient.connectToApp(e),this.addLog(e,"Connected successfully","received")}catch(t){console.error("Failed to connect to app:",t),this.addLog(e,"Connection failed: "+t,"received"),alert("Failed to connect to app: "+t)}}disconnectFromApp(e){this.webrtcClient&&(this.webrtcClient.disconnect(e),this.addLog(e,"Disconnected","sent"),this.renderAppList())}handleSendMessage(){let e=document.getElementById("message-input"),t=document.getElementById("target-app"),i=e.value.trim(),n=t.value;if(!i){alert("Please enter a message");return}if(!n){alert("Please select a target app");return}if(!this.webrtcClient){alert("WebRTC client not initialized");return}try{this.webrtcClient.sendMessage(n,i),this.addLog(n,i,"sent"),e.value=""}catch(a){console.error("Failed to send message:",a),alert("Failed to send message: "+a)}}addLog(e,t,i){let n={timestamp:new Date,appId:e,direction:i,data:t};this.messageLog.push(n),this.messageLog.length>100&&this.messageLog.shift(),this.renderMessageLog(),this.updateTargetAppDropdown()}renderMessageLog(){this.messageLogDiv.innerHTML=this.messageLog.slice().reverse().map(e=>{let t=e.timestamp.toLocaleTimeString(),i=e.direction==="sent"?"log-sent":"log-received",n=e.direction==="sent"?"\u2192":"\u2190";return`
-          <div class="log-entry ${i}">
-            <span class="log-time">${t}</span>
-            <span class="log-direction">${n}</span>
-            <span class="log-app">${this.escapeHtml(e.appId)}</span>
-            <span class="log-data">${this.escapeHtml(e.data)}</span>
+      `;
+      }).join("");
+    }
+    async connectToApp(appId) {
+      if (!this.webrtcClient) {
+        alert("WebRTC client not initialized");
+        return;
+      }
+      try {
+        this.addLog(appId, "Connecting...", "sent");
+        await this.webrtcClient.connectToApp(appId);
+        this.addLog(appId, "Connected successfully", "received");
+      } catch (error) {
+        console.error("Failed to connect to app:", error);
+        this.addLog(appId, "Connection failed: " + error, "received");
+        alert("Failed to connect to app: " + error);
+      }
+    }
+    disconnectFromApp(appId) {
+      if (!this.webrtcClient) {
+        return;
+      }
+      this.webrtcClient.disconnect(appId);
+      this.addLog(appId, "Disconnected", "sent");
+      this.renderAppList();
+    }
+    handleSendMessage() {
+      const input = document.getElementById("message-input");
+      const appSelect = document.getElementById("target-app");
+      const message = input.value.trim();
+      const targetAppId = appSelect.value;
+      if (!message) {
+        alert("Please enter a message");
+        return;
+      }
+      if (!targetAppId) {
+        alert("Please select a target app");
+        return;
+      }
+      if (!this.webrtcClient) {
+        alert("WebRTC client not initialized");
+        return;
+      }
+      try {
+        this.webrtcClient.sendMessage(targetAppId, message);
+        this.addLog(targetAppId, message, "sent");
+        input.value = "";
+      } catch (error) {
+        console.error("Failed to send message:", error);
+        alert("Failed to send message: " + error);
+      }
+    }
+    addLog(appId, data, direction) {
+      const entry = {
+        timestamp: /* @__PURE__ */ new Date(),
+        appId,
+        direction,
+        data
+      };
+      this.messageLog.push(entry);
+      if (this.messageLog.length > 100) {
+        this.messageLog.shift();
+      }
+      this.renderMessageLog();
+      this.updateTargetAppDropdown();
+    }
+    renderMessageLog() {
+      this.messageLogDiv.innerHTML = this.messageLog.slice().reverse().map((entry) => {
+        const time = entry.timestamp.toLocaleTimeString();
+        const directionClass = entry.direction === "sent" ? "log-sent" : "log-received";
+        const directionLabel = entry.direction === "sent" ? "\u2192" : "\u2190";
+        return `
+          <div class="log-entry ${directionClass}">
+            <span class="log-time">${time}</span>
+            <span class="log-direction">${directionLabel}</span>
+            <span class="log-app">${this.escapeHtml(entry.appId)}</span>
+            <span class="log-data">${this.escapeHtml(entry.data)}</span>
           </div>
-        `}).join("")}updateTargetAppDropdown(){let e=document.getElementById("target-app"),t=e.value,i=this.webrtcClient?.getConnectedApps()||[];e.innerHTML='<option value="">-- Select App --</option>'+i.map(n=>{let a=this.apps.get(n),r=a?a.name:n;return`<option value="${n}">${this.escapeHtml(r)}</option>`}).join(""),i.includes(t)&&(e.value=t)}clearMessageLog(){this.messageLog=[],this.renderMessageLog()}escapeHtml(e){let t=document.createElement("div");return t.textContent=e,t.innerHTML}};function u(){document.readyState==="loading"?document.addEventListener("DOMContentLoaded",()=>{window.uiManager=new d}):window.uiManager=new d}u();export{c as SignalingClient,l as WebRTCClient,u as initializeUI};
+        `;
+      }).join("");
+    }
+    updateTargetAppDropdown() {
+      const select = document.getElementById("target-app");
+      const currentValue = select.value;
+      const connectedApps = this.webrtcClient?.getConnectedApps() || [];
+      select.innerHTML = '<option value="">-- Select App --</option>' + connectedApps.map((appId) => {
+        const app = this.apps.get(appId);
+        const name = app ? app.name : appId;
+        return `<option value="${appId}">${this.escapeHtml(name)}</option>`;
+      }).join("");
+      if (connectedApps.includes(currentValue)) {
+        select.value = currentValue;
+      }
+    }
+    clearMessageLog() {
+      this.messageLog = [];
+      this.renderMessageLog();
+    }
+    escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  };
+  function initializeUI() {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => {
+        window.uiManager = new UIManager();
+      });
+    } else {
+      window.uiManager = new UIManager();
+    }
+  }
+  initializeUI();
+  return __toCommonJS(ui_exports);
+})();
