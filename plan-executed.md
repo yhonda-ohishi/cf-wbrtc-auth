@@ -132,10 +132,23 @@ WebRTC DataChannel上でgRPC-Web通信を可能にするトランスポート層
 - [x] Go: `go/grpcweb/grpcweb.go` - 公開API
 - [x] WebRTCクライアント修正（`getTransport()` メソッド追加）
 
+#### 8.5 サンプル・ドキュメント
+- [x] `examples/` にサンプル実装
+- [x] README更新
+
+#### 8.6 Server Reflection
+- [x] Go: `go/grpcweb/reflection/reflection.go` - Server Reflection実装
+- [x] Go: `go/grpcweb/reflection/reflection_test.go` - Server Reflectionテスト
+- [x] TypeScript: `src/grpc/reflection/reflection.ts` - Reflectionクライアント
+- [x] TypeScript: `test/reflection.test.ts` - Reflectionテスト
+- [x] Go grpcweb.goにReflection API追加
+- [x] Transport に `GetRegisteredMethods()` メソッド追加
+
 ## Phase 8 Files Created
 - `src/grpc/codec/frame.ts` - TypeScript Frame codec
 - `src/grpc/codec/envelope.ts` - TypeScript Envelope codec
 - `src/grpc/transport/datachannel-transport.ts` - TypeScript DataChannel transport
+- `src/grpc/reflection/reflection.ts` - TypeScript Reflection client
 - `src/grpc/index.ts` - TypeScript public API
 - `go/grpcweb/codec/frame.go` - Go Frame codec
 - `go/grpcweb/codec/frame_test.go` - Go Frame codec tests
@@ -143,5 +156,11 @@ WebRTC DataChannel上でgRPC-Web通信を可能にするトランスポート層
 - `go/grpcweb/codec/envelope_test.go` - Go Envelope codec tests
 - `go/grpcweb/transport/datachannel.go` - Go DataChannel transport
 - `go/grpcweb/transport/datachannel_test.go` - Go transport tests
+- `go/grpcweb/reflection/reflection.go` - Go Server Reflection
+- `go/grpcweb/reflection/reflection_test.go` - Go Reflection tests
 - `go/grpcweb/grpcweb.go` - Go public API
 - `go/grpcweb/go.mod` - Go module
+- `test/reflection.test.ts` - TypeScript Reflection tests
+- `examples/go/server.go` - Go server example
+- `examples/typescript/client.ts` - TypeScript client example
+- `examples/README.md` - Examples documentation

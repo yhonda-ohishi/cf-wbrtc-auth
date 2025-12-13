@@ -57,6 +57,7 @@ import (
 	"time"
 
 	"github.com/anthropics/cf-wbrtc-auth/go/grpcweb/codec"
+	"github.com/anthropics/cf-wbrtc-auth/go/grpcweb/reflection"
 	"github.com/anthropics/cf-wbrtc-auth/go/grpcweb/transport"
 	"github.com/pion/webrtc/v4"
 )
@@ -185,4 +186,42 @@ func NewSuccessResponse(messages ...[]byte) ResponseEnvelope {
 			"grpc-status": "0",
 		},
 	}
+}
+
+// Reflection types and functions
+type (
+	// Reflection provides server reflection functionality
+	Reflection = reflection.Reflection
+	// ServiceInfo contains information about a registered service
+	ServiceInfo = reflection.ServiceInfo
+	// ListServicesResponse is the response for ListServices
+	ListServicesResponse = reflection.ListServicesResponse
+)
+
+// ReflectionMethodPath is the path for the ListServices method
+const ReflectionMethodPath = reflection.MethodPath
+
+// NewReflection creates a new Reflection instance.
+// The transport must implement the HandlerRegistry interface.
+//
+// Example:
+//
+//	transport := grpcweb.NewTransport(dataChannel, nil)
+//	refl := grpcweb.NewReflection(transport)
+//	transport.RegisterHandler(grpcweb.ReflectionMethodPath, refl.Handler())
+func NewReflection(transport *Transport) *Reflection {
+	return reflection.New(transport)
+}
+
+// RegisterReflection is a convenience function that creates and registers
+// reflection handlers on the transport.
+//
+// Example:
+//
+//	transport := grpcweb.NewTransport(dataChannel, nil)
+//	grpcweb.RegisterReflection(transport)
+func RegisterReflection(transport *Transport) *Reflection {
+	refl := reflection.New(transport)
+	transport.RegisterHandler(reflection.MethodPath, refl.Handler())
+	return refl
 }

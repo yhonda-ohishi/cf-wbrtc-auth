@@ -6,7 +6,21 @@
       "Bash(npm run build:*)",
       "Bash(npm run:*)",
       "Bash(npm test:*)",
-      "Bash(go test:*)"
+      "Bash(go test:*)",
+      "Bash(E2E_TEST=1 go test:*)",
+      "Bash(go vet:*)",
+      "Bash(gofmt:*)",
+      "Bash(ls:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(npx tsc:*)",
+      "Bash(grep:*)",
+      "Bash(find c:jscf-wbrtc-auth -type f -name *.proto)",
+      "Bash(cat:*)",
+      "Bash(go mod init:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(go doc:*)",
+      "Bash(tree:*)"
     ]
   }
 }

@@ -56,3 +56,11 @@ export {
   type CallOptions,
   type UnaryResponse,
 } from './transport/datachannel-transport';
+
+// Reflection exports - for service discovery
+export {
+  ReflectionClient,
+  REFLECTION_METHOD_PATH,
+  type ServiceInfo,
+  type ListServicesResponse,
+} from './reflection/reflection';

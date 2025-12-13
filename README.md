@@ -370,6 +370,95 @@ const ws = new SignalingClient('wss://cf-wbrtc-auth.m-tama-ramu.workers.dev/ws')
 const ws = new SignalingClient('wss://cf-wbrtc-auth.m-tama-ramu.workers.dev/ws', jwtToken);
 ```
 
+## gRPC-Web over DataChannel
+
+WebRTC DataChannel上でgRPC-Webスタイルの通信を行うトランスポートライブラリ。
+
+### インストール
+
+```bash
+# Go (サーバー側)
+go get github.com/anthropics/cf-wbrtc-auth/go/grpcweb
+
+# TypeScript (クライアント側) - プロジェクトに含まれています
+import { DataChannelTransport, ReflectionClient } from './grpc';
+```
+
+### Go サーバー例
+
+```go
+import "github.com/anthropics/cf-wbrtc-auth/go/grpcweb"
+
+// DataChannel からトランスポート作成
+transport := grpcweb.NewTransport(dataChannel, nil)
+
+// Server Reflection を有効化（推奨）
+grpcweb.RegisterReflection(transport)
+
+// ハンドラ登録
+handler := grpcweb.MakeHandler(
+    func(data []byte) (*MyRequest, error) {
+        var req MyRequest
+        return &req, json.Unmarshal(data, &req)
+    },
+    func(resp *MyResponse) ([]byte, error) {
+        return json.Marshal(resp)
+    },
+    func(ctx context.Context, req *MyRequest) (*MyResponse, error) {
+        return &MyResponse{Result: "OK"}, nil
+    },
+)
+transport.RegisterHandler("/mypackage.MyService/MyMethod", handler)
+
+// 開始
+transport.Start()
+```
+
+### TypeScript クライアント例
+
+```typescript
+import { DataChannelTransport, ReflectionClient, GrpcError } from './grpc';
+
+// トランスポート作成
+const transport = new DataChannelTransport(dataChannel);
+
+// RPC呼び出し
+try {
+  const response = await transport.unary(
+    '/mypackage.MyService/MyMethod',
+    { data: 'test' },
+    (msg) => new TextEncoder().encode(JSON.stringify(msg)),
+    (data) => JSON.parse(new TextDecoder().decode(data))
+  );
+  console.log(response.message);
+} catch (error) {
+  if (error instanceof GrpcError) {
+    console.log(`gRPC Error ${error.code}: ${error.message}`);
+  }
+}
+
+// Server Reflection でサービス一覧取得
+const reflection = new ReflectionClient(transport);
+const services = await reflection.listServices();
+for (const svc of services.services) {
+  console.log(`Service: ${svc.name}, Methods: ${svc.methods.join(', ')}`);
+}
+```
+
+### gRPC エラーコード
+
+| コード | 名前 | 説明 |
+|--------|------|------|
+| 0 | OK | 成功 |
+| 3 | INVALID_ARGUMENT | 無効な引数 |
+| 5 | NOT_FOUND | リソースなし |
+| 7 | PERMISSION_DENIED | 権限なし |
+| 12 | UNIMPLEMENTED | 未実装 |
+| 13 | INTERNAL | 内部エラー |
+| 16 | UNAUTHENTICATED | 未認証 |
+
+詳細は [examples/](examples/) を参照。
+
 ## ファイル構成
 
 ```
@@ -386,16 +475,42 @@ src/
 │   └── apps.ts       # App管理API
 ├── do/
 │   └── signaling.ts  # SignalingDO (Durable Object)
-└── client/
-    ├── ws-client.ts      # WebSocketクライアント
-    ├── webrtc-client.ts  # WebRTCクライアント
-    ├── ui.ts             # UI管理
-    └── bundle.ts         # 埋め込みバンドル
+├── client/
+│   ├── ws-client.ts      # WebSocketクライアント
+│   ├── webrtc-client.ts  # WebRTCクライアント
+│   ├── ui.ts             # UI管理
+│   └── bundle.ts         # 埋め込みバンドル
+└── grpc/                 # gRPC-Web over DataChannel
+    ├── codec/
+    │   ├── frame.ts      # フレームコーデック
+    │   └── envelope.ts   # リクエスト/レスポンスエンコード
+    ├── transport/
+    │   └── datachannel-transport.ts  # DataChannelトランスポート
+    ├── reflection/
+    │   └── reflection.ts  # Server Reflectionクライアント
+    └── index.ts          # 公開API
+
+go/
+├── client/           # Go WebRTC クライアント
+│   ├── client.go     # シグナリングクライアント
+│   ├── webrtc.go     # WebRTC接続
+│   └── setup.go      # OAuth セットアップ
+└── grpcweb/          # gRPC-Web ライブラリ
+    ├── codec/        # フレーム/エンベロープコーデック
+    ├── transport/    # DataChannelトランスポート
+    ├── reflection/   # Server Reflection
+    └── grpcweb.go    # 公開API
+
+examples/
+├── go/server.go          # Go サーバー例
+├── typescript/client.ts  # TypeScript クライアント例
+└── README.md
 
 test/
 ├── jwt.test.ts       # JWT テスト
 ├── auth.test.ts      # 認証ミドルウェア テスト
-└── apps.test.ts      # App API テスト
+├── apps.test.ts      # App API テスト
+└── reflection.test.ts # Reflection テスト
 
 docs/
 └── API.md            # APIドキュメント

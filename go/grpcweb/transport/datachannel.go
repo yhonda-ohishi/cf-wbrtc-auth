@@ -121,6 +121,19 @@ func (t *DataChannelTransport) UnregisterHandler(path string) {
 	delete(t.handlers, path)
 }
 
+// GetRegisteredMethods returns all registered method paths
+// This implements the HandlerRegistry interface for reflection support
+func (t *DataChannelTransport) GetRegisteredMethods() []string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	methods := make([]string, 0, len(t.handlers))
+	for path := range t.handlers {
+		methods = append(methods, path)
+	}
+	return methods
+}
+
 // OnClose sets a callback to be called when the transport is closed
 func (t *DataChannelTransport) OnClose(callback func()) {
 	t.mu.Lock()

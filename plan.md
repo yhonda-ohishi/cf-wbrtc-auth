@@ -7,11 +7,7 @@
 
 ## Current Tasks
 
-### Phase 8: gRPC-Web Transport Library（残タスク）
-
-#### 8.5 サンプル・ドキュメント
-- [ ] `examples/` にサンプル実装
-- [ ] README更新
+（現在タスクなし - Phase 8完了）
 
 ## Notes
 - Go クライアントは go/client/ ディレクトリで管理
