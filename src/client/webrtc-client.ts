@@ -4,6 +4,7 @@
  */
 
 import { SignalingClient } from './ws-client';
+import { DataChannelTransport } from '../grpc/transport/datachannel-transport';
 
 interface RTCConfiguration {
   iceServers: RTCIceServer[];
@@ -12,6 +13,7 @@ interface RTCConfiguration {
 interface PeerConnection {
   pc: RTCPeerConnection;
   dataChannel: RTCDataChannel | null;
+  transport: DataChannelTransport | null;
   appId: string;
 }
 
@@ -110,6 +112,7 @@ export class WebRTCClient {
     const peerConnection: PeerConnection = {
       pc,
       dataChannel,
+      transport: null,
       appId,
     };
     this.peerConnections.set(appId, peerConnection);
@@ -137,6 +140,8 @@ export class WebRTCClient {
 
         dataChannel.onopen = () => {
           clearTimeout(timeout);
+          // Create transport for gRPC-Web over DataChannel
+          peerConnection.transport = new DataChannelTransport(dataChannel);
           this.onDataChannelOpen?.({ appId });
           resolve(dataChannel);
         };
@@ -239,6 +244,40 @@ export class WebRTCClient {
       const pc = this.peerConnections.get(appId);
       return pc?.dataChannel?.readyState === 'open';
     });
+  }
+
+  /**
+   * Get the gRPC-Web transport for a specific app
+   *
+   * Use this to make typed RPC calls over the DataChannel connection.
+   *
+   * @example
+   * ```typescript
+   * const transport = webrtcClient.getTransport(appId);
+   * if (transport) {
+   *   const response = await transport.unary(
+   *     '/mypackage.MyService/MyMethod',
+   *     request,
+   *     serializeRequest,
+   *     deserializeResponse
+   *   );
+   * }
+   * ```
+   */
+  public getTransport(appId: string): DataChannelTransport | null {
+    const peerConnection = this.peerConnections.get(appId);
+    return peerConnection?.transport || null;
+  }
+
+  /**
+   * Get the raw data channel for a specific app
+   *
+   * Use this for low-level access to the data channel.
+   * For RPC calls, prefer using getTransport() instead.
+   */
+  public getDataChannel(appId: string): RTCDataChannel | null {
+    const peerConnection = this.peerConnections.get(appId);
+    return peerConnection?.dataChannel || null;
   }
 
   /**
@@ -365,9 +404,18 @@ export class WebRTCClient {
    * Close a peer connection and clean up resources
    */
   private closePeerConnection(peerConnection: PeerConnection): void {
-    const { pc, dataChannel, appId } = peerConnection;
+    const { pc, dataChannel, transport, appId } = peerConnection;
 
-    // Close data channel
+    // Close transport (will also close data channel)
+    if (transport) {
+      try {
+        transport.close();
+      } catch (error) {
+        console.error('Error closing transport:', error);
+      }
+    }
+
+    // Close data channel (if transport didn't close it)
     if (dataChannel) {
       try {
         dataChannel.close();

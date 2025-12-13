@@ -106,3 +106,42 @@ E2E_TEST=1 E2E_API_KEY=your-key go test -v ./go/client -run E2E
 # WebRTC E2Eテスト（サーバー不要、ローカルLoopback）
 E2E_TEST=1 go test -v ./go/client -run TestE2EWebRTC
 ```
+
+### Phase 8: gRPC-Web Transport Library
+
+WebRTC DataChannel上でgRPC-Web通信を可能にするトランスポート層。
+
+#### 8.1 基盤構築
+- [x] Proto定義削除（ユーザー側で定義）
+- [x] 依存関係追加
+  - `package.json`: `@connectrpc/connect`, `@connectrpc/connect-web`
+  - `go.mod`: `connectrpc.com/connect`
+
+#### 8.2 gRPC-Webコーデック実装
+- [x] TypeScript: `src/grpc/codec/frame.ts` - Frame codec (data/trailer frames)
+- [x] TypeScript: `src/grpc/codec/envelope.ts` - Envelope codec (request/response)
+- [x] Go: `go/grpcweb/codec/frame.go` - Frame codec
+- [x] Go: `go/grpcweb/codec/envelope.go` - Envelope codec
+
+#### 8.3 DataChannelトランスポート
+- [x] TypeScript: `src/grpc/transport/datachannel-transport.ts` - クライアント側トランスポート
+- [x] Go: `go/grpcweb/transport/datachannel.go` - サーバー側トランスポート
+
+#### 8.4 統合・エクスポート
+- [x] TypeScript: `src/grpc/index.ts` - 公開API
+- [x] Go: `go/grpcweb/grpcweb.go` - 公開API
+- [x] WebRTCクライアント修正（`getTransport()` メソッド追加）
+
+## Phase 8 Files Created
+- `src/grpc/codec/frame.ts` - TypeScript Frame codec
+- `src/grpc/codec/envelope.ts` - TypeScript Envelope codec
+- `src/grpc/transport/datachannel-transport.ts` - TypeScript DataChannel transport
+- `src/grpc/index.ts` - TypeScript public API
+- `go/grpcweb/codec/frame.go` - Go Frame codec
+- `go/grpcweb/codec/frame_test.go` - Go Frame codec tests
+- `go/grpcweb/codec/envelope.go` - Go Envelope codec
+- `go/grpcweb/codec/envelope_test.go` - Go Envelope codec tests
+- `go/grpcweb/transport/datachannel.go` - Go DataChannel transport
+- `go/grpcweb/transport/datachannel_test.go` - Go transport tests
+- `go/grpcweb/grpcweb.go` - Go public API
+- `go/grpcweb/go.mod` - Go module

@@ -17,5 +17,5 @@
     "resolveJsonModule": true
   },
   "include": ["src/**/*", "worker-configuration.d.ts"],
-  "exclude": ["node_modules", "src/client"]
+  "exclude": ["node_modules", "src/client", "src/grpc"]
 }

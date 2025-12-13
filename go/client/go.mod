@@ -3,6 +3,7 @@ module github.com/anthropics/cf-wbrtc-auth/go/client
 go 1.21
 
 require (
+	connectrpc.com/connect v1.17.0
 	github.com/gorilla/websocket v1.5.1
 	github.com/pion/webrtc/v4 v4.0.0
 )
