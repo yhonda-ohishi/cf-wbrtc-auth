@@ -202,7 +202,11 @@ export class WebRTCClient {
     }
 
     try {
-      peerConnection.dataChannel.send(data);
+      if (typeof data === 'string') {
+        peerConnection.dataChannel.send(data);
+      } else {
+        peerConnection.dataChannel.send(data);
+      }
     } catch (error) {
       this.onError?.({
         appId,

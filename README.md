@@ -272,6 +272,104 @@ E2E_TEST=1 go test -v ./go/client -run TestE2EWebRTC
 E2E_TEST=1 E2E_API_KEY=your-key go test -v ./go/client -run E2E
 ```
 
+## ブラウザクライアント (JavaScript/TypeScript)
+
+任意のWebアプリからGo Appに接続できます。
+
+### 基本的な使い方
+
+```html
+<script type="module">
+import { SignalingClient, WebRTCClient } from 'https://cf-wbrtc-auth.m-tama-ramu.workers.dev/client.js';
+
+// 1. WebSocket接続（認証が必要）
+const ws = new SignalingClient('wss://cf-wbrtc-auth.m-tama-ramu.workers.dev/ws');
+await ws.connect();
+
+// 認証完了を待つ
+ws.onAuthenticated = (payload) => {
+  console.log('Authenticated as:', payload.userId);
+};
+
+// 2. WebRTCクライアント作成
+const rtc = new WebRTCClient(ws);
+
+// メッセージ受信
+rtc.onDataChannelMessage = ({ appId, data }) => {
+  console.log(`Message from ${appId}:`, data);
+};
+
+// 3. Go Appに接続
+const dataChannel = await rtc.connectToApp('app-id-here');
+
+// 4. メッセージ送信
+rtc.sendMessage('app-id-here', 'Hello from browser!');
+</script>
+```
+
+### SignalingClient API
+
+```typescript
+const ws = new SignalingClient(wsUrl: string, token?: string);
+
+// 接続
+await ws.connect();
+ws.disconnect();
+ws.isConnected(): boolean;
+
+// イベント
+ws.onAuthenticated = (payload: { userId: string, type: 'browser' | 'app' }) => {};
+ws.onAuthError = (payload: { error: string }) => {};
+ws.onAppStatus = (payload: { appId: string, status: 'online' | 'offline' }) => {};
+ws.onAppsListReceived = (payload: { apps: AppInfo[] }) => {};
+ws.onConnected = () => {};
+ws.onDisconnected = () => {};
+ws.onError = (payload: { message: string }) => {};
+
+// アプリ一覧取得
+ws.getApps();
+```
+
+### WebRTCClient API
+
+```typescript
+const rtc = new WebRTCClient(signalingClient: SignalingClient, iceServers?: RTCIceServer[]);
+
+// 接続
+const dataChannel = await rtc.connectToApp(appId: string);
+rtc.disconnect(appId?: string);  // appId省略で全切断
+
+// メッセージ送信
+rtc.sendMessage(appId: string, data: string | ArrayBuffer);
+
+// 状態取得
+rtc.getConnectionState(appId: string): RTCPeerConnectionState | null;
+rtc.getDataChannelState(appId: string): RTCDataChannelState | null;
+rtc.getConnectedApps(): string[];
+
+// イベント
+rtc.onDataChannelOpen = ({ appId }) => {};
+rtc.onDataChannelClose = ({ appId }) => {};
+rtc.onDataChannelMessage = ({ appId, data }) => {};
+rtc.onConnectionStateChange = ({ appId, state }) => {};
+rtc.onError = ({ appId, message }) => {};
+```
+
+### 認証について
+
+ブラウザクライアントは以下のいずれかで認証します：
+
+1. **Cookieベース（推奨）**: `/auth/login` でOAuth後、Cookieが自動送信される
+2. **トークンベース**: JWTトークンを `SignalingClient` に渡す
+
+```javascript
+// Cookieベース（同一ドメインから）
+const ws = new SignalingClient('wss://cf-wbrtc-auth.m-tama-ramu.workers.dev/ws');
+
+// トークンベース（クロスオリジン）
+const ws = new SignalingClient('wss://cf-wbrtc-auth.m-tama-ramu.workers.dev/ws', jwtToken);
+```
+
 ## ファイル構成
 
 ```
