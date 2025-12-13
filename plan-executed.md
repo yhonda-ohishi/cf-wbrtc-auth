@@ -164,3 +164,10 @@ WebRTC DataChannel上でgRPC-Web通信を可能にするトランスポート層
 - `examples/go/server.go` - Go server example
 - `examples/typescript/client.ts` - TypeScript client example
 - `examples/README.md` - Examples documentation
+
+### Phase 8.7: Reflection Test Page
+- [x] gRPC Server Reflection テストページ実装
+  - `src/client/reflection-ui.ts` - Reflection UI マネージャー
+  - `src/client/reflection-bundle.ts` - バンドル済みJavaScript
+  - `src/index.ts` - `/reflection` ルート追加
+  - Go Appに接続してサービス一覧を表示する機能
