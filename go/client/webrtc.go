@@ -230,3 +230,11 @@ func (p *PeerConnection) ConnectionState() webrtc.PeerConnectionState {
 	}
 	return p.pc.ConnectionState()
 }
+
+// DataChannel returns the underlying WebRTC data channel
+// Returns nil if the data channel hasn't been established yet
+func (p *PeerConnection) DataChannel() *webrtc.DataChannel {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.dataChannel
+}

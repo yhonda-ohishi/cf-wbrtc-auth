@@ -3,7 +3,7 @@ module github.com/anthropics/cf-wbrtc-auth/go/client
 go 1.21
 
 require (
-	connectrpc.com/connect v1.17.0
+	github.com/anthropics/cf-wbrtc-auth/go/grpcweb v0.0.0
 	github.com/gorilla/websocket v1.5.1
 	github.com/pion/webrtc/v4 v4.0.0
 )
@@ -30,3 +30,5 @@ require (
 	golang.org/x/net v0.29.0 // indirect
 	golang.org/x/sys v0.26.0 // indirect
 )
+
+replace github.com/anthropics/cf-wbrtc-auth/go/grpcweb => ../grpcweb
