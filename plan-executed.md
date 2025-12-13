@@ -27,10 +27,15 @@
 - [x] ブラウザ側 WebRTC クライアント (`src/client/webrtc-client.ts`)
 - [x] 管理 UI (`src/client/index.html`, `src/client/ui.ts`)
 
+### Phase 5: テスト・ドキュメント
+- [x] Workers 統合テスト (`test/jwt.test.ts`, `test/auth.test.ts`, `test/apps.test.ts`)
+- [x] API ドキュメント (`docs/API.md`)
+
 ## Files Created
 - `package.json`
 - `tsconfig.json`
 - `wrangler.toml`
+- `vitest.config.ts`
 - `src/index.ts` - Entry point with embedded UI
 - `src/auth/oauth.ts` - Google OAuth
 - `src/auth/jwt.ts` - JWT sign/verify
@@ -44,3 +49,8 @@
 - `src/client/index.ts` - Client exports
 - `src/client/index.html` - Management UI
 - `src/client/bundle.ts` - Embedded client bundle
+- `test/jwt.test.ts` - JWT tests
+- `test/auth.test.ts` - Auth middleware tests
+- `test/apps.test.ts` - App API tests
+- `test/README.md` - Test documentation
+- `docs/API.md` - API documentation

@@ -1,6 +1,7 @@
 name = "cf-wbrtc-auth"
 main = "src/index.ts"
 compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
 
 [vars]
 GOOGLE_CLIENT_ID = ""
