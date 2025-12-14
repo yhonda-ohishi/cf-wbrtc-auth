@@ -469,19 +469,37 @@ export class DataChannelTransport {
         return;
       }
 
-      // Find pending request
+      // Find pending unary request
       const pending = this.pendingRequests.get(requestId);
-      if (!pending) {
-        console.warn(`Received response for unknown request ID: ${requestId}`);
+      if (pending) {
+        // Clean up timeout
+        clearTimeout(pending.timeout);
+        this.pendingRequests.delete(requestId);
+
+        // Resolve promise
+        pending.resolve(responseEnvelope);
         return;
       }
 
-      // Clean up timeout
-      clearTimeout(pending.timeout);
-      this.pendingRequests.delete(requestId);
+      // Fallback: Check streaming requests (server may send stream response in Unary format)
+      const streamPending = this.pendingStreamRequests.get(requestId);
+      if (streamPending) {
+        // Process data frames as stream messages
+        if (responseEnvelope.messages.length > 0) {
+          for (const msg of responseEnvelope.messages) {
+            streamPending.onMessage(msg);
+          }
+        }
+        // Check trailers for end of stream
+        const status = responseEnvelope.trailers['grpc-status'];
+        if (status !== undefined) {
+          this.pendingStreamRequests.delete(requestId);
+          streamPending.onEnd(responseEnvelope.trailers);
+        }
+        return;
+      }
 
-      // Resolve promise
-      pending.resolve(responseEnvelope);
+      console.warn(`Received response for unknown request ID: ${requestId}`);
     } catch (error) {
       console.error('Failed to decode response:', error);
       // We don't know which request this belongs to, so we can't reject it
