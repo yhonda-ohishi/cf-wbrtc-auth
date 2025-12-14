@@ -1,6 +1,6 @@
 {
   "name": "cf-wbrtc-auth",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "WebRTC signaling client with OAuth authentication for Cloudflare Workers",
   "main": "dist/client/client/index.js",
   "module": "dist/client/client/index.js",
