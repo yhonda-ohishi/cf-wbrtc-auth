@@ -85,6 +85,24 @@ export declare class WebRTCClient {
      */
     getDataChannel(appId: string): RTCDataChannel | null;
     /**
+     * Create an additional DataChannel for a specific app
+     *
+     * Use this when you need a separate channel (e.g., for server streaming)
+     * to avoid conflicts with the main transport's message handling.
+     *
+     * @param appId - The app ID to create the channel for
+     * @param label - The label for the new DataChannel (default: 'stream')
+     * @param options - DataChannel options
+     * @returns Promise resolving to the new DataChannel when opened
+     *
+     * @example
+     * ```typescript
+     * const streamChannel = await webrtcClient.createDataChannel(appId, 'stream');
+     * const streamTransport = new StreamingTransport(streamChannel);
+     * ```
+     */
+    createDataChannel(appId: string, label?: string, options?: RTCDataChannelInit): Promise<RTCDataChannel>;
+    /**
      * Handle incoming answer from app
      */
     private handleAnswer;

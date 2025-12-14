@@ -21,16 +21,23 @@ type PeerConnection struct {
 	dataChannel     *webrtc.DataChannel
 	signalingClient *SignalingClient
 	handler         DataChannelHandler
+	onDataChannel   DataChannelCallback
 	mu              sync.RWMutex
 	pendingICE      []webrtc.ICECandidateInit
 	requestID       string
 }
+
+// DataChannelCallback is called when a new DataChannel is created
+type DataChannelCallback func(dc *webrtc.DataChannel)
 
 // PeerConfig configuration for peer connection
 type PeerConfig struct {
 	ICEServers      []webrtc.ICEServer
 	SignalingClient *SignalingClient
 	Handler         DataChannelHandler
+	// OnDataChannel is called for each incoming DataChannel (optional)
+	// If set, this is called instead of using the default handler for non-"data" channels
+	OnDataChannel DataChannelCallback
 }
 
 // NewPeerConnection creates a new WebRTC peer connection
@@ -56,6 +63,7 @@ func NewPeerConnection(config PeerConfig) (*PeerConnection, error) {
 		pc:              pc,
 		signalingClient: config.SignalingClient,
 		handler:         config.Handler,
+		onDataChannel:   config.OnDataChannel,
 		pendingICE:      make([]webrtc.ICECandidateInit, 0),
 	}
 
@@ -89,7 +97,16 @@ func NewPeerConnection(config PeerConfig) (*PeerConnection, error) {
 
 	// Handle incoming data channels (for browser-initiated connections)
 	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
-		peer.setupDataChannel(dc)
+		// Main "data" channel is handled by the default handler
+		if dc.Label() == "data" {
+			peer.setupDataChannel(dc)
+			return
+		}
+
+		// Additional channels (e.g., "stream") are passed to the custom callback
+		if peer.onDataChannel != nil {
+			peer.onDataChannel(dc)
+		}
 	})
 
 	return peer, nil

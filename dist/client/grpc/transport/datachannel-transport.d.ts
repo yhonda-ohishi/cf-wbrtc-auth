@@ -29,6 +29,14 @@ export declare class GrpcError extends Error {
     constructor(code: number, message: string, trailers: Record<string, string>);
 }
 /**
+ * Streaming response interface
+ */
+export interface StreamingResponse<T> {
+    headers: Record<string, string>;
+    trailers: Record<string, string>;
+    messages: AsyncIterable<T>;
+}
+/**
  * DataChannel Transport for gRPC-Web over WebRTC
  *
  * This transport wraps an RTCDataChannel and provides a high-level API
@@ -38,6 +46,7 @@ export declare class GrpcError extends Error {
 export declare class DataChannelTransport {
     private dataChannel;
     private pendingRequests;
+    private pendingStreamRequests;
     private requestIdCounter;
     private closed;
     constructor(dataChannel: RTCDataChannel);
@@ -52,6 +61,17 @@ export declare class DataChannelTransport {
      * @returns Promise resolving to the response
      */
     unary<Req, Resp>(path: string, request: Req, serialize: (msg: Req) => Uint8Array, deserialize: (data: Uint8Array) => Resp, options?: CallOptions): Promise<UnaryResponse<Resp>>;
+    /**
+     * Perform a server streaming RPC call
+     *
+     * @param path - Full method path, e.g., "/package.Service/Method"
+     * @param request - Request message object
+     * @param serialize - Function to serialize request message to bytes
+     * @param deserialize - Function to deserialize response bytes to message
+     * @param options - Call options (timeout, headers)
+     * @returns StreamingResponse with async iterable messages
+     */
+    serverStreaming<Req, Resp>(path: string, request: Req, serialize: (msg: Req) => Uint8Array, deserialize: (data: Uint8Array) => Resp, options?: CallOptions): StreamingResponse<Resp>;
     /**
      * Low-level method to send raw request and get raw response
      *
@@ -76,6 +96,10 @@ export declare class DataChannelTransport {
      * Handle incoming message from DataChannel
      */
     private handleMessage;
+    /**
+     * Handle incoming stream message
+     */
+    private handleStreamMessage;
     /**
      * Handle DataChannel close event
      */

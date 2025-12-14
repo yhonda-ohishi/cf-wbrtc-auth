@@ -226,6 +226,49 @@ export class WebRTCClient {
         return peerConnection?.dataChannel || null;
     }
     /**
+     * Create an additional DataChannel for a specific app
+     *
+     * Use this when you need a separate channel (e.g., for server streaming)
+     * to avoid conflicts with the main transport's message handling.
+     *
+     * @param appId - The app ID to create the channel for
+     * @param label - The label for the new DataChannel (default: 'stream')
+     * @param options - DataChannel options
+     * @returns Promise resolving to the new DataChannel when opened
+     *
+     * @example
+     * ```typescript
+     * const streamChannel = await webrtcClient.createDataChannel(appId, 'stream');
+     * const streamTransport = new StreamingTransport(streamChannel);
+     * ```
+     */
+    async createDataChannel(appId, label = 'stream', options) {
+        const peerConnection = this.peerConnections.get(appId);
+        if (!peerConnection) {
+            throw new Error(`No peer connection for app: ${appId}`);
+        }
+        if (peerConnection.pc.connectionState !== 'connected') {
+            throw new Error(`Peer connection is not connected (state: ${peerConnection.pc.connectionState})`);
+        }
+        const dataChannel = peerConnection.pc.createDataChannel(label, {
+            ordered: true,
+            ...options,
+        });
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('DataChannel connection timeout'));
+            }, 10000);
+            dataChannel.onopen = () => {
+                clearTimeout(timeout);
+                resolve(dataChannel);
+            };
+            dataChannel.onerror = (error) => {
+                clearTimeout(timeout);
+                reject(error);
+            };
+        });
+    }
+    /**
      * Handle incoming answer from app
      */
     async handleAnswer(appId, sdp) {

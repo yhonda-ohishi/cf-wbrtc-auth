@@ -94,4 +94,31 @@ export declare function getError(envelope: ResponseEnvelope): {
  * Get status code name from code number
  */
 export declare function getStatusName(code: number): string;
+export declare const StreamFlag: {
+    readonly DATA: 0;
+    readonly END: 1;
+};
+export interface StreamMessage {
+    requestId: string;
+    flag: number;
+    data: Uint8Array;
+}
+/**
+ * Decode a stream message received from DataChannel
+ * Format: [requestId_len(4)][requestId(N)][flag(1)][data...]
+ */
+export declare function decodeStreamMessage(data: Uint8Array): StreamMessage;
+/**
+ * Check if data is a stream message
+ *
+ * Stream messages have format: [requestId_len(4)][requestId(N)][flag(1)][data]
+ * where requestId starts with "req-" prefix
+ *
+ * Unary responses have format: [headers_len(4)][headers_json(N)][grpc_frames]
+ * where headers_json starts with "{"
+ *
+ * We distinguish them by checking if the string after the length starts with "req-"
+ * (stream message) or "{" (unary response)
+ */
+export declare function isStreamMessage(data: Uint8Array): boolean;
 //# sourceMappingURL=envelope.d.ts.map

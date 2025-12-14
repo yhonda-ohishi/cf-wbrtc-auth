@@ -25,7 +25,9 @@
 export { 
 // Frame codec
 FRAME_DATA, FRAME_TRAILER, encodeFrame, decodeFrames, createDataFrame, createTrailerFrame, parseTrailers, } from './codec/frame';
-export { StatusCode, encodeRequest, decodeResponse, encodeResponse, createErrorResponse, isErrorResponse, getError, getStatusName, } from './codec/envelope';
+export { StatusCode, encodeRequest, decodeResponse, encodeResponse, createErrorResponse, isErrorResponse, getError, getStatusName, 
+// Stream message codec
+StreamFlag, decodeStreamMessage, isStreamMessage, } from './codec/envelope';
 // Transport exports - main API for users
 export { DataChannelTransport, GrpcError, } from './transport/datachannel-transport';
 // Reflection exports - for service discovery

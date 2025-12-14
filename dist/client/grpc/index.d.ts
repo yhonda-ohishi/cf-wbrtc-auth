@@ -22,7 +22,7 @@
  * ```
  */
 export { FRAME_DATA, FRAME_TRAILER, type Frame, encodeFrame, decodeFrames, createDataFrame, createTrailerFrame, parseTrailers, } from './codec/frame';
-export { type RequestEnvelope, type ResponseEnvelope, StatusCode, encodeRequest, decodeResponse, encodeResponse, createErrorResponse, isErrorResponse, getError, getStatusName, } from './codec/envelope';
-export { DataChannelTransport, GrpcError, type CallOptions, type UnaryResponse, } from './transport/datachannel-transport';
+export { type RequestEnvelope, type ResponseEnvelope, StatusCode, encodeRequest, decodeResponse, encodeResponse, createErrorResponse, isErrorResponse, getError, getStatusName, StreamFlag, type StreamMessage, decodeStreamMessage, isStreamMessage, } from './codec/envelope';
+export { DataChannelTransport, GrpcError, type CallOptions, type UnaryResponse, type StreamingResponse, } from './transport/datachannel-transport';
 export { ReflectionClient, REFLECTION_METHOD_PATH, type ServiceInfo, type ListServicesResponse, } from './reflection/reflection';
 //# sourceMappingURL=index.d.ts.map

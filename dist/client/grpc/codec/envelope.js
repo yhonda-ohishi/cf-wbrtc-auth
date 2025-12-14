@@ -223,3 +223,80 @@ export function getStatusName(code) {
     const entry = Object.entries(StatusCode).find(([_, value]) => value === code);
     return entry ? entry[0] : 'UNKNOWN';
 }
+// Stream message flags for streaming RPC over DataChannel
+export const StreamFlag = {
+    DATA: 0x00, // Data message in the stream
+    END: 0x01, // Final message with trailers
+};
+/**
+ * Decode a stream message received from DataChannel
+ * Format: [requestId_len(4)][requestId(N)][flag(1)][data...]
+ */
+export function decodeStreamMessage(data) {
+    const view = new DataView(data.buffer, data.byteOffset);
+    const decoder = new TextDecoder('utf-8');
+    let offset = 0;
+    // Read request ID length
+    if (offset + 4 > data.length) {
+        throw new Error('Stream message too short');
+    }
+    const requestIdLen = view.getUint32(offset, false);
+    offset += 4;
+    // Read request ID
+    if (offset + requestIdLen + 1 > data.length) {
+        throw new Error('Incomplete stream message');
+    }
+    const requestId = decoder.decode(data.slice(offset, offset + requestIdLen));
+    offset += requestIdLen;
+    // Read flag
+    const flag = data[offset];
+    offset++;
+    // Read data
+    const msgData = data.slice(offset);
+    return {
+        requestId,
+        flag,
+        data: msgData,
+    };
+}
+/**
+ * Check if data is a stream message
+ *
+ * Stream messages have format: [requestId_len(4)][requestId(N)][flag(1)][data]
+ * where requestId starts with "req-" prefix
+ *
+ * Unary responses have format: [headers_len(4)][headers_json(N)][grpc_frames]
+ * where headers_json starts with "{"
+ *
+ * We distinguish them by checking if the string after the length starts with "req-"
+ * (stream message) or "{" (unary response)
+ */
+export function isStreamMessage(data) {
+    if (data.length < 5) {
+        return false;
+    }
+    const view = new DataView(data.buffer, data.byteOffset);
+    const len = view.getUint32(0, false);
+    // Length should be reasonable
+    if (len === 0 || len > data.length - 4) {
+        return false;
+    }
+    // Check the first character after length
+    // Unary response headers start with '{' (0x7B)
+    // Stream message requestId starts with 'r' (0x72) from "req-"
+    const firstChar = data[4];
+    // If it starts with '{', it's a unary response header JSON
+    if (firstChar === 0x7B) { // '{'
+        return false;
+    }
+    // Stream message requestId should start with "req-"
+    if (len >= 4 && 4 + len + 1 <= data.length) {
+        const prefix = String.fromCharCode(data[4], data[5], data[6], data[7]);
+        if (prefix === 'req-') {
+            // Check if flag is valid
+            const flag = data[4 + len];
+            return flag === StreamFlag.DATA || flag === StreamFlag.END;
+        }
+    }
+    return false;
+}
