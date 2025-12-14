@@ -150,9 +150,22 @@ authRoutes.get('/callback', async (c) => {
 
   // Check if returnUrl is external (different origin)
   if (isExternalUrl(returnUrl, baseUrl)) {
-    // External redirect: pass token as URL parameter
+    // External redirect: issue short-lived auth code instead of JWT
+    const authCode = crypto.randomUUID();
+
+    // Store auth code with user data (expires in 60 seconds)
+    await c.env.KV.put(
+      `authcode:${authCode}`,
+      JSON.stringify({
+        userId,
+        email: googleUser.email,
+        name: googleUser.name,
+      }),
+      { expirationTtl: 60 }
+    );
+
     const redirectUrl = new URL(returnUrl);
-    redirectUrl.searchParams.set('token', jwt);
+    redirectUrl.searchParams.set('code', authCode);
     return c.redirect(redirectUrl.toString());
   }
 
@@ -171,4 +184,44 @@ authRoutes.get('/callback', async (c) => {
 authRoutes.post('/logout', (c) => {
   deleteCookie(c, 'token');
   return c.json({ ok: true });
+});
+
+// Token exchange endpoint: exchange auth code for JWT
+authRoutes.post('/token', async (c) => {
+  const body = await c.req.json<{ code: string }>();
+  const { code } = body;
+
+  if (!code) {
+    return c.json({ error: 'Missing code' }, 400);
+  }
+
+  // Retrieve and delete auth code (one-time use)
+  const authCodeData = await c.env.KV.get(`authcode:${code}`, 'json') as {
+    userId: string;
+    email: string;
+    name: string;
+  } | null;
+
+  if (!authCodeData) {
+    return c.json({ error: 'Invalid or expired code' }, 400);
+  }
+
+  // Delete the code immediately (one-time use)
+  await c.env.KV.delete(`authcode:${code}`);
+
+  // Issue JWT
+  const jwt = await signJWT(
+    { sub: authCodeData.userId, email: authCodeData.email, name: authCodeData.name },
+    c.env.JWT_SECRET,
+    86400 * 7 // 7 days
+  );
+
+  return c.json({
+    token: jwt,
+    user: {
+      userId: authCodeData.userId,
+      email: authCodeData.email,
+      name: authCodeData.name,
+    },
+  });
 });

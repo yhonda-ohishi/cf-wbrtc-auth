@@ -18,22 +18,42 @@ export class AuthClient {
         window.location.href = loginUrl;
     }
     /**
-     * Handle OAuth callback by extracting token from URL
-     * Call this on page load to check for token in URL params
-     * @returns Token if found in URL, null otherwise
+     * Handle OAuth callback by extracting auth code from URL and exchanging it for a token
+     * Call this on page load to check for code in URL params
+     * @returns Token if successfully exchanged, null otherwise
      */
-    handleCallback() {
+    async handleCallback() {
         const url = new URL(window.location.href);
-        const token = url.searchParams.get('token');
-        if (token) {
+        const code = url.searchParams.get('code');
+        if (!code) {
+            return null;
+        }
+        // Clean up URL immediately (remove code param)
+        url.searchParams.delete('code');
+        window.history.replaceState({}, document.title, url.toString());
+        try {
+            // Exchange code for token
+            const response = await fetch(`${this.authServerUrl}/auth/token`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ code }),
+            });
+            if (!response.ok) {
+                console.error('Failed to exchange code for token');
+                return null;
+            }
+            const data = await response.json();
+            const { token } = data;
             // Save token to storage
             this.storage.setItem(TOKEN_STORAGE_KEY, token);
-            // Clean up URL (remove token param)
-            url.searchParams.delete('token');
-            window.history.replaceState({}, document.title, url.toString());
             return token;
         }
-        return null;
+        catch (error) {
+            console.error('Failed to exchange code for token:', error);
+            return null;
+        }
     }
     /**
      * Get stored token

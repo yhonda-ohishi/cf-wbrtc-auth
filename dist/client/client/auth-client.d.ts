@@ -18,11 +18,11 @@ export declare class AuthClient {
      */
     login(returnUrl?: string): void;
     /**
-     * Handle OAuth callback by extracting token from URL
-     * Call this on page load to check for token in URL params
-     * @returns Token if found in URL, null otherwise
+     * Handle OAuth callback by extracting auth code from URL and exchanging it for a token
+     * Call this on page load to check for code in URL params
+     * @returns Token if successfully exchanged, null otherwise
      */
-    handleCallback(): string | null;
+    handleCallback(): Promise<string | null>;
     /**
      * Get stored token
      * @returns Token if exists, null otherwise
