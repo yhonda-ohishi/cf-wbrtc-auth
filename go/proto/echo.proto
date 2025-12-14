@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package example;
+
+option go_package = "github.com/anthropics/cf-wbrtc-auth/go/proto";
+
+// EchoRequest is the request message for Echo and Reverse methods
+message EchoRequest {
+  string message = 1;
+}
+
+// EchoResponse is the response message for Echo and Reverse methods
+message EchoResponse {
+  string message = 1;
+}
+
+// EchoService provides echo functionality
+service EchoService {
+  // Echo returns the same message
+  rpc Echo(EchoRequest) returns (EchoResponse);
+
+  // Reverse returns the message reversed
+  rpc Reverse(EchoRequest) returns (EchoResponse);
+}

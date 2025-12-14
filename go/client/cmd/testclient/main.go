@@ -16,20 +16,12 @@ import (
 
 	"github.com/anthropics/cf-wbrtc-auth/go/client"
 	"github.com/anthropics/cf-wbrtc-auth/go/grpcweb"
+	pb "github.com/anthropics/cf-wbrtc-auth/go/proto"
+	"google.golang.org/protobuf/proto"
 )
 
 // Default credentials file path
 const defaultCredentialsFile = ".testclient-credentials"
-
-// EchoRequest is the request message for Echo and Reverse methods
-type EchoRequest struct {
-	Message string `json:"message"`
-}
-
-// EchoResponse is the response message for Echo and Reverse methods
-type EchoResponse struct {
-	Message string `json:"message"`
-}
 
 // TestClientHandler implements client.EventHandler
 type TestClientHandler struct {
@@ -153,40 +145,40 @@ func (h *DataChannelHandler) OnClose() {
 
 // setupGRPCHandlers sets up gRPC service handlers on the transport
 func setupGRPCHandlers(transport *grpcweb.Transport) {
-	// Register Echo handler
+	// Register Echo handler using Protobuf serialization
 	echoHandler := grpcweb.MakeHandler(
-		// Deserialize request
-		func(data []byte) (EchoRequest, error) {
-			var req EchoRequest
-			err := json.Unmarshal(data, &req)
+		// Deserialize request from Protobuf
+		func(data []byte) (*pb.EchoRequest, error) {
+			req := &pb.EchoRequest{}
+			err := proto.Unmarshal(data, req)
 			return req, err
 		},
-		// Serialize response
-		func(resp EchoResponse) ([]byte, error) {
-			return json.Marshal(resp)
+		// Serialize response to Protobuf
+		func(resp *pb.EchoResponse) ([]byte, error) {
+			return proto.Marshal(resp)
 		},
 		// Handle request
-		func(ctx context.Context, req EchoRequest) (EchoResponse, error) {
+		func(ctx context.Context, req *pb.EchoRequest) (*pb.EchoResponse, error) {
 			log.Printf("  Echo: %q", req.Message)
-			return EchoResponse{Message: req.Message}, nil
+			return &pb.EchoResponse{Message: req.Message}, nil
 		},
 	)
 	transport.RegisterHandler("/example.EchoService/Echo", echoHandler)
 
-	// Register Reverse handler
+	// Register Reverse handler using Protobuf serialization
 	reverseHandler := grpcweb.MakeHandler(
-		// Deserialize request
-		func(data []byte) (EchoRequest, error) {
-			var req EchoRequest
-			err := json.Unmarshal(data, &req)
+		// Deserialize request from Protobuf
+		func(data []byte) (*pb.EchoRequest, error) {
+			req := &pb.EchoRequest{}
+			err := proto.Unmarshal(data, req)
 			return req, err
 		},
-		// Serialize response
-		func(resp EchoResponse) ([]byte, error) {
-			return json.Marshal(resp)
+		// Serialize response to Protobuf
+		func(resp *pb.EchoResponse) ([]byte, error) {
+			return proto.Marshal(resp)
 		},
 		// Handle request
-		func(ctx context.Context, req EchoRequest) (EchoResponse, error) {
+		func(ctx context.Context, req *pb.EchoRequest) (*pb.EchoResponse, error) {
 			// Reverse the string
 			runes := []rune(req.Message)
 			for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
@@ -194,7 +186,7 @@ func setupGRPCHandlers(transport *grpcweb.Transport) {
 			}
 			reversed := string(runes)
 			log.Printf("  Reverse: %q -> %q", req.Message, reversed)
-			return EchoResponse{Message: reversed}, nil
+			return &pb.EchoResponse{Message: reversed}, nil
 		},
 	)
 	transport.RegisterHandler("/example.EchoService/Reverse", reverseHandler)
