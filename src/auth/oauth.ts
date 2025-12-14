@@ -186,24 +186,42 @@ authRoutes.post('/logout', (c) => {
   return c.json({ ok: true });
 });
 
+// CORS headers for token endpoint (cross-origin requests from external frontends)
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+// CORS preflight for /token endpoint
+authRoutes.options('/token', (c) => {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      ...corsHeaders,
+      'Access-Control-Max-Age': '86400',
+    },
+  });
+});
+
 // Token exchange endpoint: exchange auth code for JWT
 authRoutes.post('/token', async (c) => {
   const body = await c.req.json<{ code: string }>();
   const { code } = body;
 
   if (!code) {
-    return c.json({ error: 'Missing code' }, 400);
+    return c.json({ error: 'Missing code' }, 400, corsHeaders);
   }
 
   // Retrieve and delete auth code (one-time use)
-  const authCodeData = await c.env.KV.get(`authcode:${code}`, 'json') as {
+  const authCodeData = (await c.env.KV.get(`authcode:${code}`, 'json')) as {
     userId: string;
     email: string;
     name: string;
   } | null;
 
   if (!authCodeData) {
-    return c.json({ error: 'Invalid or expired code' }, 400);
+    return c.json({ error: 'Invalid or expired code' }, 400, corsHeaders);
   }
 
   // Delete the code immediately (one-time use)
@@ -216,12 +234,16 @@ authRoutes.post('/token', async (c) => {
     86400 * 7 // 7 days
   );
 
-  return c.json({
-    token: jwt,
-    user: {
-      userId: authCodeData.userId,
-      email: authCodeData.email,
-      name: authCodeData.name,
+  return c.json(
+    {
+      token: jwt,
+      user: {
+        userId: authCodeData.userId,
+        email: authCodeData.email,
+        name: authCodeData.name,
+      },
     },
-  });
+    200,
+    corsHeaders
+  );
 });

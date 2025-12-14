@@ -27,3 +27,7 @@ new_classes = ["SignalingDO"]
 # Static assets (serves files from dist/ directory)
 [assets]
 directory = "./dist"
+
+# Enable logging
+[observability]
+enabled = true
