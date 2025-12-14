@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { authMiddleware, AuthUser } from '../middleware/auth';
 
 type Env = {
@@ -19,6 +20,16 @@ interface App {
 }
 
 export const appRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// CORS for cross-origin requests from external frontends
+appRoutes.use(
+  '/*',
+  cors({
+    origin: '*',
+    allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+  })
+);
 
 // Apply auth middleware to all routes
 appRoutes.use('/*', authMiddleware);
