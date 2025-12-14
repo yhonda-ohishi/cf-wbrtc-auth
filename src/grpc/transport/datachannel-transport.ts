@@ -182,7 +182,8 @@ export class DataChannelTransport {
     const encodedRequest = encodeRequest(envelope);
 
     try {
-      this.dataChannel.send(encodedRequest);
+      // Cast to ArrayBuffer for RTCDataChannel.send compatibility
+      this.dataChannel.send(encodedRequest as unknown as ArrayBuffer);
     } catch (error) {
       // Clean up pending request on send failure
       const pending = this.pendingRequests.get(requestId);

@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "declaration": true,
+    "declarationMap": true,
+    "outDir": "dist/client",
+    "rootDir": "src",
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/client/ws-client.ts", "src/client/webrtc-client.ts", "src/client/auth-client.ts", "src/client/index.ts", "src/grpc/**/*"],
+  "exclude": ["node_modules"]
+}

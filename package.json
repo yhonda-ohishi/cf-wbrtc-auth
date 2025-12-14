@@ -1,17 +1,47 @@
 {
   "name": "cf-wbrtc-auth",
   "version": "1.0.0",
-  "private": true,
+  "description": "WebRTC signaling client with OAuth authentication for Cloudflare Workers",
+  "main": "dist/client/client/index.js",
+  "module": "dist/client/client/index.js",
+  "types": "dist/client/client/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/client/client/index.d.ts",
+      "import": "./dist/client/client/index.js"
+    },
+    "./client": {
+      "types": "./dist/client/client/index.d.ts",
+      "import": "./dist/client/client/index.js"
+    }
+  },
+  "files": [
+    "dist/client"
+  ],
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "cf-typegen": "wrangler types",
-    "build:client": "esbuild src/client/index.ts --bundle --format=esm --target=es2020 --outfile=dist/client.js --minify",
+    "build:client": "tsc -p tsconfig.client.json && esbuild src/client/index.ts --bundle --format=esm --target=es2020 --outfile=dist/client.js --minify",
     "build:reflection-client": "esbuild src/client/reflection-ui.ts --bundle --format=iife --target=es2020 --outfile=dist/reflection-client.js --minify",
+    "build:pkg": "tsc -p tsconfig.client.json",
+    "prepublishOnly": "npm run build:pkg",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yhonda-ohishi/cf-wbrtc-auth.git"
+  },
+  "keywords": [
+    "webrtc",
+    "signaling",
+    "oauth",
+    "cloudflare",
+    "workers"
+  ],
+  "license": "MIT",
   "dependencies": {
     "@connectrpc/connect": "^2.0.0",
     "@connectrpc/connect-web": "^2.0.0",
@@ -24,6 +54,6 @@
     "tslib": "^2.8.1",
     "typescript": "^5.6.0",
     "vitest": "^1.3.0",
-    "wrangler": "^3.91.0"
+    "wrangler": "^4.54.0"
   }
 }
