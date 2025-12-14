@@ -350,47 +350,32 @@ export function decodeStreamMessage(data: Uint8Array): StreamMessage {
  * Check if data is a stream message
  *
  * Stream messages have format: [requestId_len(4)][requestId(N)][flag(1)][data]
- * where requestId starts with "req-" prefix
+ * where requestId starts with "stream-" prefix
  *
  * Unary responses have format: [headers_len(4)][headers_json(N)][grpc_frames]
  * where headers_json starts with "{"
  *
- * We distinguish them by checking if the string after the length starts with "req-" or "stream-"
+ * We distinguish them by checking if the string after the length starts with "stream-"
  * (stream message) or "{" (unary response)
  */
 export function isStreamMessage(data: Uint8Array): boolean {
-  if (data.length < 5) {
+  if (data.length < 12) { // minimum: 4 (len) + 7 (stream-) + 1 (flag)
     return false;
   }
 
   const view = new DataView(data.buffer, data.byteOffset);
   const len = view.getUint32(0, false);
 
-  // Length should be reasonable
-  if (len === 0 || len > data.length - 4) {
+  // Length should be at least 7 for "stream-" prefix
+  if (len < 7 || len > data.length - 4) {
     return false;
   }
 
-  // Check the first character after length
-  // Unary response headers start with '{' (0x7B)
-  const firstChar = data[4];
-
-  // If it starts with '{', it's a unary response header JSON
-  if (firstChar === 0x7B) { // '{'
-    return false;
-  }
-
-  // Stream message requestId should start with "req-" or "stream-"
-  if (len >= 4 && 4 + len + 1 <= data.length) {
-    // Check for "req-" prefix
-    if (data[4] === 0x72 && data[5] === 0x65 && data[6] === 0x71 && data[7] === 0x2D) { // 'r','e','q','-'
-      const flag = data[4 + len];
-      return flag === StreamFlag.DATA || flag === StreamFlag.END;
-    }
-    // Check for "stream-" prefix (need at least 7 chars)
-    if (len >= 7 &&
-        data[4] === 0x73 && data[5] === 0x74 && data[6] === 0x72 && data[7] === 0x65 &&
-        data[8] === 0x61 && data[9] === 0x6D && data[10] === 0x2D) { // 's','t','r','e','a','m','-'
+  // Check for "stream-" prefix: 's','t','r','e','a','m','-'
+  if (data[4] === 0x73 && data[5] === 0x74 && data[6] === 0x72 && data[7] === 0x65 &&
+      data[8] === 0x61 && data[9] === 0x6D && data[10] === 0x2D) {
+    // Verify flag byte is valid
+    if (4 + len + 1 <= data.length) {
       const flag = data[4 + len];
       return flag === StreamFlag.DATA || flag === StreamFlag.END;
     }
