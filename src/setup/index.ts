@@ -65,6 +65,7 @@ setupRoutes.get('/poll', async (c) => {
     expiresAt: number;
     apiKey?: string;
     appId?: string;
+    refreshToken?: string;
   };
 
   // Check expiration
@@ -79,6 +80,7 @@ setupRoutes.get('/poll', async (c) => {
       status: 'complete',
       apiKey: data.apiKey,
       appId: data.appId,
+      refreshToken: data.refreshToken,
     });
   } else {
     return c.json({
@@ -265,6 +267,20 @@ setupRoutes.post('/:token/register', async (c) => {
   apps.push(appId);
   await c.env.KV.put(`user:${payload.sub}:apps`, JSON.stringify(apps));
 
+  // Generate refresh token
+  const refreshToken = generateRefreshToken();
+
+  // Save refresh token mapping (long-lived)
+  await c.env.KV.put(
+    `refreshtoken:${refreshToken}`,
+    JSON.stringify({
+      appId,
+      apiKey,
+      userId: payload.sub,
+      createdAt: Date.now(),
+    })
+  );
+
   // Update setup status to complete
   await c.env.KV.put(
     `setup:${setupToken}`,
@@ -272,6 +288,7 @@ setupRoutes.post('/:token/register', async (c) => {
       status: 'complete',
       apiKey,
       appId,
+      refreshToken,
       expiresAt: data.expiresAt,
     }),
     { expirationTtl: 300 } // Keep for 5 more minutes for polling
@@ -325,6 +342,14 @@ function generateApiKey(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function generateRefreshToken(): string {
+  const bytes = new Uint8Array(48);
+  crypto.getRandomValues(bytes);
+  return 'rt_' + Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 }

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { authRoutes } from './auth/oauth';
 import { setupRoutes } from './setup';
-import { appRoutes } from './api/apps';
+import { appRoutes, appRefreshRoute } from './api/apps';
 import { SignalingDO } from './do/signaling';
 
 type Env = {
@@ -913,6 +913,10 @@ app.route('/auth', authRoutes);
 
 // Setup routes (Go App initial setup)
 app.route('/setup', setupRoutes);
+
+// App refresh route (no auth middleware - uses refresh token)
+// Must be before /api routes to avoid authMiddleware
+app.route('/api/app', appRefreshRoute);
 
 // API routes
 app.route('/api', appRoutes);

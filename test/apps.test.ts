@@ -452,6 +452,137 @@ describe('App Management API', () => {
     });
   });
 
+  describe('POST /api/app/refresh', () => {
+    it('should refresh API key with valid refresh token', async () => {
+      const kv = env.KV as KVNamespace;
+
+      // Create an app
+      const createResponse = await SELF.fetch('http://localhost/api/apps', {
+        method: 'POST',
+        headers: {
+          Cookie: `token=${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Test App',
+          capabilities: ['print'],
+        }),
+      });
+      const createData = await createResponse.json();
+      const appId = createData.app.id;
+      const oldApiKey = createData.apiKey;
+
+      // Manually create a refresh token for testing
+      const refreshToken = 'rt_test123456789';
+      await kv.put(
+        `refreshtoken:${refreshToken}`,
+        JSON.stringify({
+          appId,
+          apiKey: oldApiKey,
+          userId: TEST_USER.sub,
+          createdAt: Date.now(),
+        })
+      );
+
+      // Refresh the API key
+      const refreshResponse = await SELF.fetch('http://localhost/api/app/refresh', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      expect(refreshResponse.status).toBe(200);
+      const refreshData = await refreshResponse.json();
+
+      expect(refreshData.apiKey).toBeDefined();
+      expect(refreshData.apiKey).not.toBe(oldApiKey);
+      expect(refreshData.refreshToken).toBeDefined();
+      expect(refreshData.refreshToken).not.toBe(refreshToken);
+      expect(refreshData.appId).toBe(appId);
+
+      // Verify old refresh token is deleted
+      const oldTokenData = await kv.get(`refreshtoken:${refreshToken}`);
+      expect(oldTokenData).toBeNull();
+
+      // Verify new refresh token is stored
+      const newTokenData = await kv.get(`refreshtoken:${refreshData.refreshToken}`, 'json');
+      expect(newTokenData).toBeDefined();
+      expect((newTokenData as any).appId).toBe(appId);
+      expect((newTokenData as any).apiKey).toBe(refreshData.apiKey);
+
+      // Verify new API key is stored
+      const newKeyData = await kv.get(`apikey:${refreshData.apiKey}`, 'json');
+      expect(newKeyData).toBeDefined();
+      expect((newKeyData as any).appId).toBe(appId);
+
+      // Verify old API key is deleted
+      const oldKeyData = await kv.get(`apikey:${oldApiKey}`);
+      expect(oldKeyData).toBeNull();
+    });
+
+    it('should return 400 when refresh token is missing', async () => {
+      const response = await SELF.fetch('http://localhost/api/app/refresh', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+
+      expect(response.status).toBe(400);
+      const data = await response.json();
+      expect(data.error).toBe('Missing refreshToken');
+    });
+
+    it('should return 401 for invalid refresh token', async () => {
+      const response = await SELF.fetch('http://localhost/api/app/refresh', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refreshToken: 'invalid-token' }),
+      });
+
+      expect(response.status).toBe(401);
+      const data = await response.json();
+      expect(data.error).toBe('Invalid or expired refresh token');
+    });
+
+    it('should return 401 when app no longer exists', async () => {
+      const kv = env.KV as KVNamespace;
+
+      // Create a refresh token for a non-existent app
+      const refreshToken = 'rt_orphaned123';
+      await kv.put(
+        `refreshtoken:${refreshToken}`,
+        JSON.stringify({
+          appId: 'deleted-app-id',
+          apiKey: 'old-api-key',
+          userId: TEST_USER.sub,
+          createdAt: Date.now(),
+        })
+      );
+
+      const response = await SELF.fetch('http://localhost/api/app/refresh', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      expect(response.status).toBe(401);
+      const data = await response.json();
+      expect(data.error).toBe('App no longer exists');
+
+      // Verify orphaned refresh token is deleted
+      const tokenData = await kv.get(`refreshtoken:${refreshToken}`);
+      expect(tokenData).toBeNull();
+    });
+  });
+
   describe('Integration: Multiple Apps Workflow', () => {
     it('should handle creating, listing, and deleting multiple apps', async () => {
       // Create 3 apps
