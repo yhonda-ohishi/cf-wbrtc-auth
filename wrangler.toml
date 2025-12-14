@@ -11,6 +11,7 @@ GOOGLE_CLIENT_ID = "747065218280-ugkrbgaoik32f5mmi94sso4b0026j3cp.apps.googleuse
 [[kv_namespaces]]
 binding = "KV"
 id = "badebab972474c26ae711fbc2b10d735"
+preview_id = "badebab972474c26ae711fbc2b10d735"
 
 [[durable_objects.bindings]]
 name = "SIGNALING_DO"

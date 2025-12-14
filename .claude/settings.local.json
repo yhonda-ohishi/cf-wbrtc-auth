@@ -28,6 +28,10 @@
       "Bash(./testclient.exe:*)",
       "Bash(npx wrangler deploy:*)",
       "Bash(npm run build:pkg:*)",
+      "Bash(npx tsx:*)",
+      "Bash(node -e:*)",
+      "Bash(SERVER_URL=ws://localhost:8787/ws/app ./testclient.exe:*)",
+      "Bash(npx wrangler kv key put:*)"
     ]
   }
 }

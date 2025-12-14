@@ -117,7 +117,7 @@ export declare function decodeStreamMessage(data: Uint8Array): StreamMessage;
  * Unary responses have format: [headers_len(4)][headers_json(N)][grpc_frames]
  * where headers_json starts with "{"
  *
- * We distinguish them by checking if the string after the length starts with "req-"
+ * We distinguish them by checking if the string after the length starts with "req-" or "stream-"
  * (stream message) or "{" (unary response)
  */
 export declare function isStreamMessage(data: Uint8Array): boolean;

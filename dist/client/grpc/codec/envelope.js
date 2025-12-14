@@ -268,7 +268,7 @@ export function decodeStreamMessage(data) {
  * Unary responses have format: [headers_len(4)][headers_json(N)][grpc_frames]
  * where headers_json starts with "{"
  *
- * We distinguish them by checking if the string after the length starts with "req-"
+ * We distinguish them by checking if the string after the length starts with "req-" or "stream-"
  * (stream message) or "{" (unary response)
  */
 export function isStreamMessage(data) {
@@ -283,17 +283,22 @@ export function isStreamMessage(data) {
     }
     // Check the first character after length
     // Unary response headers start with '{' (0x7B)
-    // Stream message requestId starts with 'r' (0x72) from "req-"
     const firstChar = data[4];
     // If it starts with '{', it's a unary response header JSON
     if (firstChar === 0x7B) { // '{'
         return false;
     }
-    // Stream message requestId should start with "req-"
+    // Stream message requestId should start with "req-" or "stream-"
     if (len >= 4 && 4 + len + 1 <= data.length) {
-        const prefix = String.fromCharCode(data[4], data[5], data[6], data[7]);
-        if (prefix === 'req-') {
-            // Check if flag is valid
+        // Check for "req-" prefix
+        if (data[4] === 0x72 && data[5] === 0x65 && data[6] === 0x71 && data[7] === 0x2D) { // 'r','e','q','-'
+            const flag = data[4 + len];
+            return flag === StreamFlag.DATA || flag === StreamFlag.END;
+        }
+        // Check for "stream-" prefix (need at least 7 chars)
+        if (len >= 7 &&
+            data[4] === 0x73 && data[5] === 0x74 && data[6] === 0x72 && data[7] === 0x65 &&
+            data[8] === 0x61 && data[9] === 0x6D && data[10] === 0x2D) { // 's','t','r','e','a','m','-'
             const flag = data[4 + len];
             return flag === StreamFlag.DATA || flag === StreamFlag.END;
         }
