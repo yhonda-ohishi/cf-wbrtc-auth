@@ -21,6 +21,18 @@ function isLocalhost(req: Request): boolean {
   return url.hostname === 'localhost' || url.hostname === '127.0.0.1';
 }
 
+function isExternalUrl(returnUrl: string, baseUrl: string): boolean {
+  // Check if returnUrl is an absolute URL pointing to a different origin
+  try {
+    const returnOrigin = new URL(returnUrl).origin;
+    const currentOrigin = new URL(baseUrl).origin;
+    return returnOrigin !== currentOrigin;
+  } catch {
+    // Not a valid absolute URL, treat as relative path
+    return false;
+  }
+}
+
 authRoutes.get('/login', async (c) => {
   const baseUrl = getBaseUrl(c.req.raw);
   const redirectUri = `${baseUrl}/auth/callback`;
@@ -135,6 +147,16 @@ authRoutes.get('/callback', async (c) => {
   );
 
   const secure = !isLocalhost(c.req.raw);
+
+  // Check if returnUrl is external (different origin)
+  if (isExternalUrl(returnUrl, baseUrl)) {
+    // External redirect: pass token as URL parameter
+    const redirectUrl = new URL(returnUrl);
+    redirectUrl.searchParams.set('token', jwt);
+    return c.redirect(redirectUrl.toString());
+  }
+
+  // Same origin: set httpOnly cookie
   setCookie(c, 'token', jwt, {
     httpOnly: true,
     secure,
