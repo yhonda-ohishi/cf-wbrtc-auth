@@ -103,8 +103,9 @@ export class DataChannelTransport {
         }
         // Serialize request message
         const messageBytes = serialize(request);
-        // Generate request ID and prepare headers
-        const requestId = this.generateRequestId();
+        // Generate request ID with stream- prefix for easier identification
+        this.requestIdCounter++;
+        const requestId = `stream-${Date.now()}-${this.requestIdCounter}`;
         const headers = {
             'x-request-id': requestId,
             ...(options?.headers || {}),
