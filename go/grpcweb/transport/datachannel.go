@@ -54,6 +54,19 @@ func (a *dataChannelAdapter) OnError(f func(err error)) {
 // It receives the request envelope and should return the response bytes and trailers.
 type Handler func(ctx context.Context, req *codec.RequestEnvelope) (*codec.ResponseEnvelope, error)
 
+// ServerStream provides methods to send streaming responses
+type ServerStream interface {
+	// Send sends a message to the client
+	Send(message []byte) error
+	// Context returns the request context
+	Context() context.Context
+}
+
+// StreamingHandler handles a server-streaming gRPC method call.
+// It receives the request envelope and a stream to send responses.
+// The handler should call stream.Send() for each message and return when done.
+type StreamingHandler func(req *codec.RequestEnvelope, stream ServerStream) error
+
 // HandlerOptions provides options for handling requests
 type HandlerOptions struct {
 	// Timeout is the request timeout, default 30s
@@ -69,12 +82,13 @@ func DefaultHandlerOptions() *HandlerOptions {
 
 // DataChannelTransport handles gRPC-Web over DataChannel (server side)
 type DataChannelTransport struct {
-	dc       DataChannelInterface
-	handlers map[string]Handler
-	mu       sync.RWMutex
-	closed   bool
-	options  *HandlerOptions
-	onClose  func()
+	dc                DataChannelInterface
+	handlers          map[string]Handler
+	streamingHandlers map[string]StreamingHandler
+	mu                sync.RWMutex
+	closed            bool
+	options           *HandlerOptions
+	onClose           func()
 }
 
 // NewDataChannelTransport creates a new transport from a DataChannel
@@ -84,10 +98,11 @@ func NewDataChannelTransport(dc *webrtc.DataChannel, opts *HandlerOptions) *Data
 	}
 
 	return &DataChannelTransport{
-		dc:       &dataChannelAdapter{dc: dc},
-		handlers: make(map[string]Handler),
-		closed:   false,
-		options:  opts,
+		dc:                &dataChannelAdapter{dc: dc},
+		handlers:          make(map[string]Handler),
+		streamingHandlers: make(map[string]StreamingHandler),
+		closed:            false,
+		options:           opts,
 	}
 }
 
@@ -99,10 +114,11 @@ func newDataChannelTransportWithInterface(dc DataChannelInterface, opts *Handler
 	}
 
 	return &DataChannelTransport{
-		dc:       dc,
-		handlers: make(map[string]Handler),
-		closed:   false,
-		options:  opts,
+		dc:                dc,
+		handlers:          make(map[string]Handler),
+		streamingHandlers: make(map[string]StreamingHandler),
+		closed:            false,
+		options:           opts,
 	}
 }
 
@@ -119,6 +135,15 @@ func (t *DataChannelTransport) UnregisterHandler(path string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	delete(t.handlers, path)
+	delete(t.streamingHandlers, path)
+}
+
+// RegisterStreamingHandler registers a streaming handler for a method path.
+// path should be in format "/package.Service/Method"
+func (t *DataChannelTransport) RegisterStreamingHandler(path string, handler StreamingHandler) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.streamingHandlers[path] = handler
 }
 
 // GetRegisteredMethods returns all registered method paths
@@ -127,9 +152,22 @@ func (t *DataChannelTransport) GetRegisteredMethods() []string {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	methods := make([]string, 0, len(t.handlers))
+	methods := make([]string, 0, len(t.handlers)+len(t.streamingHandlers))
 	for path := range t.handlers {
 		methods = append(methods, path)
+	}
+	for path := range t.streamingHandlers {
+		// Avoid duplicates if same path registered for both
+		found := false
+		for _, m := range methods {
+			if m == path {
+				found = true
+				break
+			}
+		}
+		if !found {
+			methods = append(methods, path)
+		}
 	}
 	return methods
 }
@@ -180,12 +218,13 @@ func (t *DataChannelTransport) handleMessage(data []byte) {
 		return
 	}
 
-	// Look up handler
+	// Look up handler (check streaming first, then unary)
 	t.mu.RLock()
+	streamingHandler, isStreaming := t.streamingHandlers[req.Path]
 	handler, ok := t.handlers[req.Path]
 	t.mu.RUnlock()
 
-	if !ok {
+	if !ok && !isStreaming {
 		log.Printf("[Transport] No handler registered for path: %s", req.Path)
 		// Send UNIMPLEMENTED error
 		errResp := codec.CreateErrorResponse(codec.StatusUnimplemented, fmt.Sprintf("Method %s is not implemented", req.Path))
@@ -207,7 +246,13 @@ func (t *DataChannelTransport) handleMessage(data []byte) {
 		defer cancel()
 	}
 
-	// Call the handler
+	// Handle streaming RPC
+	if isStreaming {
+		t.handleStreamingRequest(ctx, req, streamingHandler)
+		return
+	}
+
+	// Call the unary handler
 	resp, err := handler(ctx, req)
 	if err != nil {
 		log.Printf("Handler error for %s: %v", req.Path, err)
@@ -247,6 +292,94 @@ func (t *DataChannelTransport) handleMessage(data []byte) {
 	// Send the response
 	if err := t.SendResponse(resp); err != nil {
 		log.Printf("Failed to send response: %v", err)
+	}
+}
+
+// serverStream implements ServerStream interface for streaming responses
+type serverStream struct {
+	transport *DataChannelTransport
+	requestID string
+	ctx       context.Context
+}
+
+func (s *serverStream) Send(message []byte) error {
+	// Create a data frame for the message
+	dataFrame := codec.CreateDataFrame(message)
+	frameBytes := codec.EncodeFrame(dataFrame)
+
+	// Create stream message
+	streamMsg := codec.StreamMessage{
+		RequestID: s.requestID,
+		Flag:      codec.StreamFlagData,
+		Data:      frameBytes,
+	}
+
+	// Encode and send
+	data := codec.EncodeStreamMessage(streamMsg)
+	return s.transport.dc.Send(data)
+}
+
+func (s *serverStream) Context() context.Context {
+	return s.ctx
+}
+
+// handleStreamingRequest handles a streaming RPC request
+func (t *DataChannelTransport) handleStreamingRequest(ctx context.Context, req *codec.RequestEnvelope, handler StreamingHandler) {
+	requestID := req.Headers["x-request-id"]
+	if requestID == "" {
+		log.Printf("[Transport] Streaming request missing x-request-id")
+		errResp := codec.CreateErrorResponse(codec.StatusInvalidArgument, "Missing x-request-id header")
+		if err := t.SendResponse(&errResp); err != nil {
+			log.Printf("Failed to send error response: %v", err)
+		}
+		return
+	}
+
+	// Create stream
+	stream := &serverStream{
+		transport: t,
+		requestID: requestID,
+		ctx:       ctx,
+	}
+
+	// Call the streaming handler
+	err := handler(req, stream)
+
+	// Send end message with trailers
+	var trailers map[string]string
+	if err != nil {
+		log.Printf("Streaming handler error for %s: %v", req.Path, err)
+		if grpcErr, ok := err.(*codec.GRPCError); ok {
+			trailers = map[string]string{
+				"grpc-status":  strconv.Itoa(grpcErr.Code),
+				"grpc-message": grpcErr.Message,
+			}
+		} else {
+			trailers = map[string]string{
+				"grpc-status":  strconv.Itoa(codec.StatusInternal),
+				"grpc-message": err.Error(),
+			}
+		}
+	} else {
+		trailers = map[string]string{
+			"grpc-status": strconv.Itoa(codec.StatusOK),
+		}
+	}
+
+	// Create trailer frame
+	trailerFrame := codec.CreateTrailerFrame(trailers)
+	trailerBytes := codec.EncodeFrame(trailerFrame)
+
+	// Send end message
+	endMsg := codec.StreamMessage{
+		RequestID: requestID,
+		Flag:      codec.StreamFlagEnd,
+		Data:      trailerBytes,
+	}
+
+	endData := codec.EncodeStreamMessage(endMsg)
+	if err := t.dc.Send(endData); err != nil {
+		log.Printf("Failed to send stream end message: %v", err)
 	}
 }
 
@@ -354,5 +487,76 @@ func MakeHandler[Req, Resp any](
 				"grpc-status": strconv.Itoa(codec.StatusOK),
 			},
 		}, nil
+	}
+}
+
+// TypedServerStream provides a typed wrapper for ServerStream
+type TypedServerStream[Resp any] struct {
+	stream    ServerStream
+	serialize func(Resp) ([]byte, error)
+}
+
+// Send sends a typed message to the client
+func (s *TypedServerStream[Resp]) Send(msg Resp) error {
+	data, err := s.serialize(msg)
+	if err != nil {
+		return &codec.GRPCError{
+			Code:    codec.StatusInternal,
+			Message: fmt.Sprintf("Failed to serialize response: %v", err),
+		}
+	}
+	return s.stream.Send(data)
+}
+
+// Context returns the request context
+func (s *TypedServerStream[Resp]) Context() context.Context {
+	return s.stream.Context()
+}
+
+// MakeStreamingHandler creates a StreamingHandler from typed serialization functions.
+//
+// Example:
+//
+//	handler := MakeStreamingHandler(
+//	    func(data []byte) (*pb.Request, error) {
+//	        req := &pb.Request{}
+//	        err := proto.Unmarshal(data, req)
+//	        return req, err
+//	    },
+//	    func(resp *pb.Response) ([]byte, error) {
+//	        return proto.Marshal(resp)
+//	    },
+//	    func(req *pb.Request, stream *TypedServerStream[*pb.Response]) error {
+//	        for i := 0; i < 10; i++ {
+//	            if err := stream.Send(&pb.Response{...}); err != nil {
+//	                return err
+//	            }
+//	        }
+//	        return nil
+//	    },
+//	)
+func MakeStreamingHandler[Req, Resp any](
+	deserialize func([]byte) (Req, error),
+	serialize func(Resp) ([]byte, error),
+	handle func(req Req, stream *TypedServerStream[Resp]) error,
+) StreamingHandler {
+	return func(reqEnv *codec.RequestEnvelope, stream ServerStream) error {
+		// Deserialize request
+		req, err := deserialize(reqEnv.Message)
+		if err != nil {
+			return &codec.GRPCError{
+				Code:    codec.StatusInvalidArgument,
+				Message: fmt.Sprintf("Failed to deserialize request: %v", err),
+			}
+		}
+
+		// Create typed stream
+		typedStream := &TypedServerStream[Resp]{
+			stream:    stream,
+			serialize: serialize,
+		}
+
+		// Call handler
+		return handle(req, typedStream)
 	}
 }

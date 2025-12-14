@@ -294,3 +294,81 @@ export function getStatusName(code: number): string {
   const entry = Object.entries(StatusCode).find(([_, value]) => value === code);
   return entry ? entry[0] : 'UNKNOWN';
 }
+
+// Stream message flags for streaming RPC over DataChannel
+export const StreamFlag = {
+  DATA: 0x00, // Data message in the stream
+  END: 0x01, // Final message with trailers
+} as const;
+
+// Stream message structure
+export interface StreamMessage {
+  requestId: string;
+  flag: number;
+  data: Uint8Array;
+}
+
+/**
+ * Decode a stream message received from DataChannel
+ * Format: [requestId_len(4)][requestId(N)][flag(1)][data...]
+ */
+export function decodeStreamMessage(data: Uint8Array): StreamMessage {
+  const view = new DataView(data.buffer, data.byteOffset);
+  const decoder = new TextDecoder('utf-8');
+
+  let offset = 0;
+
+  // Read request ID length
+  if (offset + 4 > data.length) {
+    throw new Error('Stream message too short');
+  }
+  const requestIdLen = view.getUint32(offset, false);
+  offset += 4;
+
+  // Read request ID
+  if (offset + requestIdLen + 1 > data.length) {
+    throw new Error('Incomplete stream message');
+  }
+  const requestId = decoder.decode(data.slice(offset, offset + requestIdLen));
+  offset += requestIdLen;
+
+  // Read flag
+  const flag = data[offset];
+  offset++;
+
+  // Read data
+  const msgData = data.slice(offset);
+
+  return {
+    requestId,
+    flag,
+    data: msgData,
+  };
+}
+
+/**
+ * Check if data is a stream message
+ * Stream messages have a specific pattern: requestId length < 256 and valid flag
+ */
+export function isStreamMessage(data: Uint8Array): boolean {
+  if (data.length < 5) {
+    return false;
+  }
+
+  const view = new DataView(data.buffer, data.byteOffset);
+  const requestIdLen = view.getUint32(0, false);
+
+  // Request ID length should be reasonable (< 256)
+  if (requestIdLen === 0 || requestIdLen > 255) {
+    return false;
+  }
+
+  // Check if we have enough data for flag
+  if (4 + requestIdLen + 1 > data.length) {
+    return false;
+  }
+
+  // Check if flag is valid
+  const flag = data[4 + requestIdLen];
+  return flag === StreamFlag.DATA || flag === StreamFlag.END;
+}

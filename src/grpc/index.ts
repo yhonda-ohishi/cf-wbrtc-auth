@@ -47,6 +47,11 @@ export {
   isErrorResponse,
   getError,
   getStatusName,
+  // Stream message codec
+  StreamFlag,
+  type StreamMessage,
+  decodeStreamMessage,
+  isStreamMessage,
 } from './codec/envelope';
 
 // Transport exports - main API for users
@@ -55,6 +60,7 @@ export {
   GrpcError,
   type CallOptions,
   type UnaryResponse,
+  type StreamingResponse,
 } from './transport/datachannel-transport';
 
 // Reflection exports - for service discovery

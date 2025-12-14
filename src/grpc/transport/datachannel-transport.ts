@@ -19,7 +19,11 @@ import {
   isErrorResponse,
   getError,
   StatusCode,
+  isStreamMessage,
+  decodeStreamMessage,
+  StreamFlag,
 } from '../codec/envelope';
+import { decodeFrames, parseTrailers, FRAME_DATA, FRAME_TRAILER } from '../codec/frame';
 
 export interface CallOptions {
   timeout?: number; // ms, default 30000
@@ -56,6 +60,25 @@ interface PendingRequest {
 }
 
 /**
+ * Streaming response interface
+ */
+export interface StreamingResponse<T> {
+  headers: Record<string, string>;
+  trailers: Record<string, string>;
+  messages: AsyncIterable<T>;
+}
+
+/**
+ * Internal structure for tracking pending streaming requests
+ */
+interface PendingStreamRequest {
+  onMessage: (data: Uint8Array) => void;
+  onEnd: (trailers: Record<string, string>) => void;
+  onError: (error: Error) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}
+
+/**
  * DataChannel Transport for gRPC-Web over WebRTC
  *
  * This transport wraps an RTCDataChannel and provides a high-level API
@@ -65,6 +88,7 @@ interface PendingRequest {
 export class DataChannelTransport {
   private dataChannel: RTCDataChannel;
   private pendingRequests = new Map<string, PendingRequest>();
+  private pendingStreamRequests = new Map<string, PendingStreamRequest>();
   private requestIdCounter = 0;
   private closed = false;
 
@@ -136,6 +160,162 @@ export class DataChannelTransport {
       message,
       headers: responseEnvelope.headers,
       trailers: responseEnvelope.trailers,
+    };
+  }
+
+  /**
+   * Perform a server streaming RPC call
+   *
+   * @param path - Full method path, e.g., "/package.Service/Method"
+   * @param request - Request message object
+   * @param serialize - Function to serialize request message to bytes
+   * @param deserialize - Function to deserialize response bytes to message
+   * @param options - Call options (timeout, headers)
+   * @returns StreamingResponse with async iterable messages
+   */
+  serverStreaming<Req, Resp>(
+    path: string,
+    request: Req,
+    serialize: (msg: Req) => Uint8Array,
+    deserialize: (data: Uint8Array) => Resp,
+    options?: CallOptions
+  ): StreamingResponse<Resp> {
+    if (this.closed) {
+      throw new Error('Transport is closed');
+    }
+
+    // Serialize request message
+    const messageBytes = serialize(request);
+
+    // Generate request ID and prepare headers
+    const requestId = this.generateRequestId();
+    const headers = {
+      'x-request-id': requestId,
+      ...(options?.headers || {}),
+    };
+
+    // Create request envelope
+    const envelope: RequestEnvelope = {
+      path,
+      headers,
+      message: messageBytes,
+    };
+
+    // Set up timeout
+    const timeoutMs = options?.timeout || 30000;
+
+    // Message queue for async iteration
+    const messageQueue: Resp[] = [];
+    let resolveNext: ((value: IteratorResult<Resp>) => void) | null = null;
+    let streamEnded = false;
+    let streamError: Error | null = null;
+    let trailers: Record<string, string> = {};
+
+    // Set up timeout
+    const timeout = setTimeout(() => {
+      this.pendingStreamRequests.delete(requestId);
+      streamError = new Error(`Request timeout after ${timeoutMs}ms`);
+      streamEnded = true;
+      if (resolveNext) {
+        resolveNext({ done: true, value: undefined });
+      }
+    }, timeoutMs);
+
+    // Register stream handlers
+    this.pendingStreamRequests.set(requestId, {
+      onMessage: (data: Uint8Array) => {
+        try {
+          const message = deserialize(data);
+          if (resolveNext) {
+            const resolve = resolveNext;
+            resolveNext = null;
+            resolve({ done: false, value: message });
+          } else {
+            messageQueue.push(message);
+          }
+        } catch (err) {
+          streamError = err instanceof Error ? err : new Error(String(err));
+        }
+      },
+      onEnd: (endTrailers: Record<string, string>) => {
+        clearTimeout(timeout);
+        trailers = endTrailers;
+        streamEnded = true;
+
+        // Check for gRPC error in trailers
+        const status = endTrailers['grpc-status'];
+        if (status && parseInt(status, 10) !== StatusCode.OK) {
+          const code = parseInt(status, 10);
+          const message = endTrailers['grpc-message'] || 'Unknown error';
+          streamError = new GrpcError(code, message, endTrailers);
+        }
+
+        if (resolveNext) {
+          const resolve = resolveNext;
+          resolveNext = null;
+          if (streamError) {
+            // For errors, we still complete the iterator but the error is accessible
+            resolve({ done: true, value: undefined });
+          } else {
+            resolve({ done: true, value: undefined });
+          }
+        }
+      },
+      onError: (error: Error) => {
+        clearTimeout(timeout);
+        this.pendingStreamRequests.delete(requestId);
+        streamError = error;
+        streamEnded = true;
+        if (resolveNext) {
+          const resolve = resolveNext;
+          resolveNext = null;
+          resolve({ done: true, value: undefined });
+        }
+      },
+      timeout,
+    });
+
+    // Send request
+    const encodedRequest = encodeRequest(envelope);
+    try {
+      this.dataChannel.send(encodedRequest as unknown as ArrayBuffer);
+    } catch (error) {
+      clearTimeout(timeout);
+      this.pendingStreamRequests.delete(requestId);
+      throw error;
+    }
+
+    // Create async iterator
+    const asyncIterator: AsyncIterator<Resp> = {
+      next: (): Promise<IteratorResult<Resp>> => {
+        // Check for queued messages first
+        if (messageQueue.length > 0) {
+          return Promise.resolve({ done: false, value: messageQueue.shift()! });
+        }
+
+        // Check if stream ended
+        if (streamEnded) {
+          if (streamError) {
+            return Promise.reject(streamError);
+          }
+          return Promise.resolve({ done: true, value: undefined });
+        }
+
+        // Wait for next message
+        return new Promise((resolve) => {
+          resolveNext = resolve;
+        });
+      },
+    };
+
+    return {
+      headers: {}, // Headers are not sent separately in our protocol
+      get trailers() {
+        return trailers;
+      },
+      messages: {
+        [Symbol.asyncIterator]: () => asyncIterator,
+      },
     };
   }
 
@@ -234,6 +414,13 @@ export class DataChannelTransport {
     }
     this.pendingRequests.clear();
 
+    // Close all pending stream requests
+    for (const [requestId, pending] of this.pendingStreamRequests.entries()) {
+      clearTimeout(pending.timeout);
+      pending.onError(error);
+    }
+    this.pendingStreamRequests.clear();
+
     // Close DataChannel
     if (this.dataChannel.readyState === 'open') {
       this.dataChannel.close();
@@ -265,7 +452,13 @@ export class DataChannelTransport {
     const data = new Uint8Array(event.data as ArrayBuffer);
 
     try {
-      // Decode response envelope
+      // Check if this is a stream message
+      if (isStreamMessage(data)) {
+        this.handleStreamMessage(data);
+        return;
+      }
+
+      // Decode response envelope (unary response)
       const responseEnvelope = decodeResponse(data);
 
       // Extract request ID from response headers
@@ -295,6 +488,46 @@ export class DataChannelTransport {
   }
 
   /**
+   * Handle incoming stream message
+   */
+  private handleStreamMessage(data: Uint8Array): void {
+    try {
+      const streamMsg = decodeStreamMessage(data);
+      const pending = this.pendingStreamRequests.get(streamMsg.requestId);
+
+      if (!pending) {
+        console.warn(`Received stream message for unknown request ID: ${streamMsg.requestId}`);
+        return;
+      }
+
+      if (streamMsg.flag === StreamFlag.DATA) {
+        // Decode the frame to get the message data
+        const { frames } = decodeFrames(streamMsg.data);
+        for (const frame of frames) {
+          if (frame.flags === FRAME_DATA) {
+            pending.onMessage(frame.data);
+          }
+        }
+      } else if (streamMsg.flag === StreamFlag.END) {
+        // Decode trailer frame
+        const { frames } = decodeFrames(streamMsg.data);
+        let trailers: Record<string, string> = {};
+
+        for (const frame of frames) {
+          if (frame.flags === FRAME_TRAILER) {
+            trailers = parseTrailers(frame.data);
+          }
+        }
+
+        this.pendingStreamRequests.delete(streamMsg.requestId);
+        pending.onEnd(trailers);
+      }
+    } catch (error) {
+      console.error('Failed to handle stream message:', error);
+    }
+  }
+
+  /**
    * Handle DataChannel close event
    */
   private handleClose(): void {
@@ -309,6 +542,13 @@ export class DataChannelTransport {
       pending.reject(error);
     }
     this.pendingRequests.clear();
+
+    // Close all pending stream requests
+    for (const [requestId, pending] of this.pendingStreamRequests.entries()) {
+      clearTimeout(pending.timeout);
+      pending.onError(error);
+    }
+    this.pendingStreamRequests.clear();
 
     this.closed = true;
   }

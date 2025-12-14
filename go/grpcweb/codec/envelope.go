@@ -394,3 +394,100 @@ func GetStatusName(code int) string {
 		return "UNKNOWN"
 	}
 }
+
+// Stream message flags for streaming RPC over DataChannel
+const (
+	// StreamFlagData indicates a data message in the stream
+	StreamFlagData byte = 0x00
+	// StreamFlagEnd indicates the final message with trailers
+	StreamFlagEnd byte = 0x01
+)
+
+// StreamMessage represents a single message in a streaming RPC
+type StreamMessage struct {
+	RequestID string // Correlates stream messages to the original request
+	Flag      byte   // StreamFlagData or StreamFlagEnd
+	Data      []byte // Frame data (data frame or trailer frame)
+}
+
+// EncodeStreamMessage encodes a stream message for sending over DataChannel
+// Format: [requestId_len(4)][requestId(N)][flag(1)][data...]
+func EncodeStreamMessage(msg StreamMessage) []byte {
+	requestIDBytes := []byte(msg.RequestID)
+	requestIDLen := len(requestIDBytes)
+
+	totalLen := 4 + requestIDLen + 1 + len(msg.Data)
+	buffer := make([]byte, totalLen)
+	offset := 0
+
+	// Write request ID length
+	binary.BigEndian.PutUint32(buffer[offset:offset+4], uint32(requestIDLen))
+	offset += 4
+
+	// Write request ID
+	copy(buffer[offset:offset+requestIDLen], requestIDBytes)
+	offset += requestIDLen
+
+	// Write flag
+	buffer[offset] = msg.Flag
+	offset++
+
+	// Write data
+	copy(buffer[offset:], msg.Data)
+
+	return buffer
+}
+
+// DecodeStreamMessage decodes a stream message received from DataChannel
+func DecodeStreamMessage(data []byte) (*StreamMessage, error) {
+	if len(data) < 5 {
+		return nil, errors.New("stream message too short")
+	}
+
+	offset := 0
+
+	// Read request ID length
+	requestIDLen := binary.BigEndian.Uint32(data[offset : offset+4])
+	offset += 4
+
+	if offset+int(requestIDLen)+1 > len(data) {
+		return nil, errors.New("incomplete stream message")
+	}
+
+	// Read request ID
+	requestID := string(data[offset : offset+int(requestIDLen)])
+	offset += int(requestIDLen)
+
+	// Read flag
+	flag := data[offset]
+	offset++
+
+	// Read data
+	msgData := data[offset:]
+
+	return &StreamMessage{
+		RequestID: requestID,
+		Flag:      flag,
+		Data:      msgData,
+	}, nil
+}
+
+// IsStreamMessage checks if data is a stream message (starts with request ID length)
+// Regular responses start with headers length which is typically small JSON
+// Stream messages have a specific pattern we can detect
+func IsStreamMessage(data []byte) bool {
+	if len(data) < 5 {
+		return false
+	}
+	// Check if first 4 bytes represent a reasonable request ID length (< 256)
+	// and the data after request ID starts with a valid stream flag
+	requestIDLen := binary.BigEndian.Uint32(data[0:4])
+	if requestIDLen == 0 || requestIDLen > 255 {
+		return false
+	}
+	if int(4+requestIDLen+1) > len(data) {
+		return false
+	}
+	flag := data[4+requestIDLen]
+	return flag == StreamFlagData || flag == StreamFlagEnd
+}
