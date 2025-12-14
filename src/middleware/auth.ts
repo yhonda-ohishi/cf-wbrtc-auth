@@ -16,7 +16,15 @@ export async function authMiddleware(
   c: Context<{ Bindings: Env; Variables: { user: AuthUser } }>,
   next: Next
 ) {
-  const token = getCookie(c, 'token');
+  // Try Authorization header first, then cookie
+  let token: string | undefined;
+
+  const authHeader = c.req.header('Authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    token = authHeader.slice(7);
+  } else {
+    token = getCookie(c, 'token');
+  }
 
   if (!token) {
     return c.json({ error: 'Unauthorized' }, 401);
