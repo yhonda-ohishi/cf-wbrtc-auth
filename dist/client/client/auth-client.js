@@ -47,7 +47,10 @@ export class AuthClient {
             const data = await response.json();
             const { token } = data;
             // Save token to storage
+            console.log('[AuthClient] Saving token to storage, key:', TOKEN_STORAGE_KEY);
+            console.log('[AuthClient] Storage type:', this.storage === localStorage ? 'localStorage' : 'sessionStorage');
             this.storage.setItem(TOKEN_STORAGE_KEY, token);
+            console.log('[AuthClient] Token saved, verify:', this.storage.getItem(TOKEN_STORAGE_KEY) ? 'SUCCESS' : 'FAILED');
             return token;
         }
         catch (error) {
