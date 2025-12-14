@@ -348,7 +348,15 @@ export function decodeStreamMessage(data: Uint8Array): StreamMessage {
 
 /**
  * Check if data is a stream message
- * Stream messages have a specific pattern: requestId length < 256 and valid flag
+ *
+ * Stream messages have format: [requestId_len(4)][requestId(N)][flag(1)][data]
+ * where requestId starts with "req-" prefix
+ *
+ * Unary responses have format: [headers_len(4)][headers_json(N)][grpc_frames]
+ * where headers_json starts with "{"
+ *
+ * We distinguish them by checking if the string after the length starts with "req-"
+ * (stream message) or "{" (unary response)
  */
 export function isStreamMessage(data: Uint8Array): boolean {
   if (data.length < 5) {
@@ -356,19 +364,32 @@ export function isStreamMessage(data: Uint8Array): boolean {
   }
 
   const view = new DataView(data.buffer, data.byteOffset);
-  const requestIdLen = view.getUint32(0, false);
+  const len = view.getUint32(0, false);
 
-  // Request ID length should be reasonable (< 256)
-  if (requestIdLen === 0 || requestIdLen > 255) {
+  // Length should be reasonable
+  if (len === 0 || len > data.length - 4) {
     return false;
   }
 
-  // Check if we have enough data for flag
-  if (4 + requestIdLen + 1 > data.length) {
+  // Check the first character after length
+  // Unary response headers start with '{' (0x7B)
+  // Stream message requestId starts with 'r' (0x72) from "req-"
+  const firstChar = data[4];
+
+  // If it starts with '{', it's a unary response header JSON
+  if (firstChar === 0x7B) { // '{'
     return false;
   }
 
-  // Check if flag is valid
-  const flag = data[4 + requestIdLen];
-  return flag === StreamFlag.DATA || flag === StreamFlag.END;
+  // Stream message requestId should start with "req-"
+  if (len >= 4 && 4 + len + 1 <= data.length) {
+    const prefix = String.fromCharCode(data[4], data[5], data[6], data[7]);
+    if (prefix === 'req-') {
+      // Check if flag is valid
+      const flag = data[4 + len];
+      return flag === StreamFlag.DATA || flag === StreamFlag.END;
+    }
+  }
+
+  return false;
 }
