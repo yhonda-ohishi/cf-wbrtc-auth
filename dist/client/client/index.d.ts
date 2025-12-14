@@ -6,5 +6,4 @@ export { SignalingClient } from './ws-client';
 export { WebRTCClient } from './webrtc-client';
 export { AuthClient } from './auth-client';
 export type { AuthClientOptions } from './auth-client';
-export { initializeUI } from './ui';
 //# sourceMappingURL=index.d.ts.map

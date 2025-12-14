@@ -48,6 +48,16 @@ class ReflectionUIManager {
 
   constructor() {
     debug('constructor', 'Initializing ReflectionUIManager');
+    // Ensure DOM is ready before initializing
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => this.initialize());
+    } else {
+      this.initialize();
+    }
+  }
+
+  private initialize(): void {
+    debug('initialize', 'DOM ready, initializing...');
     this.initializeDOM();
     this.checkAuthStatus();
   }

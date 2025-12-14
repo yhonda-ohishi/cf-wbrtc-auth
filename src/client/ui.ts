@@ -39,6 +39,15 @@ class UIManager {
   private logoutBtn!: HTMLElement;
 
   constructor() {
+    // Ensure DOM is ready before initializing
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => this.initialize());
+    } else {
+      this.initialize();
+    }
+  }
+
+  private initialize(): void {
     this.initializeDOM();
     this.checkAuthStatus();
   }
@@ -469,5 +478,6 @@ export function initializeUI(): void {
   }
 }
 
-// Auto-initialize
-initializeUI();
+// Note: Do not auto-initialize here as this module is part of the npm package.
+// Auto-initialization would run even when users only import AuthClient.
+// Users should call initializeUI() explicitly if they need the embedded UI.

@@ -171,7 +171,7 @@ func (t *DataChannelTransport) handleMessage(data []byte) {
 	// Decode the request envelope
 	req, err := codec.DecodeRequest(data)
 	if err != nil {
-		log.Printf("Failed to decode request: %v", err)
+		log.Printf("[Transport] Failed to decode request: %v", err)
 		// Send error response
 		errResp := codec.CreateErrorResponse(codec.StatusInvalidArgument, fmt.Sprintf("Failed to decode request: %v", err))
 		if err := t.SendResponse(&errResp); err != nil {
@@ -186,7 +186,7 @@ func (t *DataChannelTransport) handleMessage(data []byte) {
 	t.mu.RUnlock()
 
 	if !ok {
-		log.Printf("No handler registered for path: %s", req.Path)
+		log.Printf("[Transport] No handler registered for path: %s", req.Path)
 		// Send UNIMPLEMENTED error
 		errResp := codec.CreateErrorResponse(codec.StatusUnimplemented, fmt.Sprintf("Method %s is not implemented", req.Path))
 		// Echo x-request-id if present

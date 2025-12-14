@@ -20,7 +20,14 @@
       "Bash(go mod init:*)",
       "Bash(go mod tidy:*)",
       "Bash(go doc:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(npm run build:reflection-client:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(go fmt:*)",
+      "Bash(npx wrangler deploy)",
+      "Bash(./testclient.exe:*)",
+      "Bash(npx wrangler deploy:*)",
+      "Bash(npm run build:pkg:*)",
     ]
   }
 }
