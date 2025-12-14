@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -239,9 +240,9 @@ func TestSplitLines(t *testing.T) {
 
 func TestParseKeyValue(t *testing.T) {
 	tests := []struct {
-		input    string
-		wantKey  string
-		wantVal  string
+		input   string
+		wantKey string
+		wantVal string
 	}{
 		{"KEY=value", "KEY", "value"},
 		{"KEY=", "KEY", ""},
@@ -259,5 +260,223 @@ func TestParseKeyValue(t *testing.T) {
 				t.Errorf("Value: got %q, want %q", val, tt.wantVal)
 			}
 		})
+	}
+}
+
+func TestSetupPollingWithRefreshToken(t *testing.T) {
+	pollCount := 0
+	token := "test-token-12345"
+
+	// Create mock server
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/setup/init":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"token":"%s","url":"http://example.com/setup/%s"}`, token, token)
+
+		case "/setup/poll":
+			w.Header().Set("Content-Type", "application/json")
+			pollCount++
+			if pollCount < 2 {
+				fmt.Fprintf(w, `{"status":"pending"}`)
+			} else {
+				fmt.Fprintf(w, `{"status":"complete","apiKey":"test-api-key","appId":"test-app-id","refreshToken":"rt_test-refresh-token"}`)
+			}
+
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer mockServer.Close()
+
+	config := SetupConfig{
+		ServerURL:    mockServer.URL,
+		PollInterval: 10 * time.Millisecond,
+		Timeout:      1 * time.Second,
+	}
+
+	ctx := context.Background()
+	result, err := Setup(ctx, config)
+	if err != nil {
+		t.Fatalf("Setup failed: %v", err)
+	}
+
+	if result.APIKey != "test-api-key" {
+		t.Errorf("APIKey mismatch: got %s, want test-api-key", result.APIKey)
+	}
+
+	if result.AppID != "test-app-id" {
+		t.Errorf("AppID mismatch: got %s, want test-app-id", result.AppID)
+	}
+
+	if result.RefreshToken != "rt_test-refresh-token" {
+		t.Errorf("RefreshToken mismatch: got %s, want rt_test-refresh-token", result.RefreshToken)
+	}
+}
+
+func TestRefreshAPIKey(t *testing.T) {
+	// Create mock server
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/app/refresh" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		if r.Method != "POST" {
+			t.Errorf("Expected POST method, got %s", r.Method)
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		contentType := r.Header.Get("Content-Type")
+		if contentType != "application/json" {
+			t.Errorf("Expected Content-Type application/json, got %s", contentType)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		var req refreshRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, `{"error":"invalid request"}`)
+			return
+		}
+
+		if req.RefreshToken != "rt_valid-refresh-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprintf(w, `{"error":"Invalid or expired refresh token"}`)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"apiKey":"new-api-key","refreshToken":"rt_new-refresh-token","appId":"test-app-id"}`)
+	}))
+	defer mockServer.Close()
+
+	ctx := context.Background()
+
+	// Test successful refresh
+	config := RefreshAPIKeyConfig{
+		ServerURL:    mockServer.URL,
+		RefreshToken: "rt_valid-refresh-token",
+	}
+
+	result, err := RefreshAPIKey(ctx, config)
+	if err != nil {
+		t.Fatalf("RefreshAPIKey failed: %v", err)
+	}
+
+	if result.APIKey != "new-api-key" {
+		t.Errorf("APIKey mismatch: got %s, want new-api-key", result.APIKey)
+	}
+
+	if result.RefreshToken != "rt_new-refresh-token" {
+		t.Errorf("RefreshToken mismatch: got %s, want rt_new-refresh-token", result.RefreshToken)
+	}
+
+	if result.AppID != "test-app-id" {
+		t.Errorf("AppID mismatch: got %s, want test-app-id", result.AppID)
+	}
+}
+
+func TestRefreshAPIKeyInvalidToken(t *testing.T) {
+	// Create mock server
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprintf(w, `{"error":"Invalid or expired refresh token"}`)
+	}))
+	defer mockServer.Close()
+
+	ctx := context.Background()
+
+	config := RefreshAPIKeyConfig{
+		ServerURL:    mockServer.URL,
+		RefreshToken: "rt_invalid-token",
+	}
+
+	_, err := RefreshAPIKey(ctx, config)
+	if err == nil {
+		t.Error("Expected error for invalid refresh token")
+	}
+}
+
+func TestSaveAndLoadCredentialsWithRefreshToken(t *testing.T) {
+	tmpDir := t.TempDir()
+	credPath := filepath.Join(tmpDir, "credentials.env")
+
+	// Save credentials with refresh token
+	original := &SetupResult{
+		APIKey:       "test-api-key-12345",
+		AppID:        "test-app-id-67890",
+		RefreshToken: "rt_test-refresh-token",
+	}
+
+	err := SaveCredentials(credPath, original)
+	if err != nil {
+		t.Fatalf("SaveCredentials failed: %v", err)
+	}
+
+	// Load credentials
+	loaded, err := LoadCredentials(credPath)
+	if err != nil {
+		t.Fatalf("LoadCredentials failed: %v", err)
+	}
+
+	if loaded.APIKey != original.APIKey {
+		t.Errorf("APIKey mismatch: got %s, want %s", loaded.APIKey, original.APIKey)
+	}
+
+	if loaded.AppID != original.AppID {
+		t.Errorf("AppID mismatch: got %s, want %s", loaded.AppID, original.AppID)
+	}
+
+	if loaded.RefreshToken != original.RefreshToken {
+		t.Errorf("RefreshToken mismatch: got %s, want %s", loaded.RefreshToken, original.RefreshToken)
+	}
+}
+
+func TestUpdateCredentials(t *testing.T) {
+	tmpDir := t.TempDir()
+	credPath := filepath.Join(tmpDir, "credentials.env")
+
+	// Save initial credentials
+	initial := &SetupResult{
+		APIKey:       "old-api-key",
+		AppID:        "test-app-id",
+		RefreshToken: "rt_old-refresh-token",
+	}
+	err := SaveCredentials(credPath, initial)
+	if err != nil {
+		t.Fatalf("SaveCredentials failed: %v", err)
+	}
+
+	// Update with new credentials
+	refreshResult := &RefreshAPIKeyResult{
+		APIKey:       "new-api-key",
+		RefreshToken: "rt_new-refresh-token",
+		AppID:        "test-app-id",
+	}
+
+	err = UpdateCredentials(credPath, refreshResult)
+	if err != nil {
+		t.Fatalf("UpdateCredentials failed: %v", err)
+	}
+
+	// Load and verify
+	loaded, err := LoadCredentials(credPath)
+	if err != nil {
+		t.Fatalf("LoadCredentials failed: %v", err)
+	}
+
+	if loaded.APIKey != "new-api-key" {
+		t.Errorf("APIKey mismatch: got %s, want new-api-key", loaded.APIKey)
+	}
+
+	if loaded.RefreshToken != "rt_new-refresh-token" {
+		t.Errorf("RefreshToken mismatch: got %s, want rt_new-refresh-token", loaded.RefreshToken)
+	}
+
+	if loaded.AppID != "test-app-id" {
+		t.Errorf("AppID mismatch: got %s, want test-app-id", loaded.AppID)
 	}
 }

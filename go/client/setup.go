@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,8 +23,9 @@ type SetupConfig struct {
 
 // SetupResult result from OAuth setup
 type SetupResult struct {
-	APIKey string
-	AppID  string
+	APIKey       string
+	AppID        string
+	RefreshToken string
 }
 
 // setupInitResponse response from POST /setup/init
@@ -34,9 +36,10 @@ type setupInitResponse struct {
 
 // setupPollResponse response from GET /setup/poll
 type setupPollResponse struct {
-	Status string `json:"status"`
-	APIKey string `json:"apiKey,omitempty"`
-	AppID  string `json:"appId,omitempty"`
+	Status       string `json:"status"`
+	APIKey       string `json:"apiKey,omitempty"`
+	AppID        string `json:"appId,omitempty"`
+	RefreshToken string `json:"refreshToken,omitempty"`
 }
 
 // Setup performs OAuth setup flow for Go App using polling method
@@ -141,8 +144,9 @@ func Setup(ctx context.Context, config SetupConfig) (*SetupResult, error) {
 				}
 				fmt.Printf("Setup completed successfully!\n")
 				return &SetupResult{
-					APIKey: pollResult.APIKey,
-					AppID:  pollResult.AppID,
+					APIKey:       pollResult.APIKey,
+					AppID:        pollResult.AppID,
+					RefreshToken: pollResult.RefreshToken,
 				}, nil
 
 			case "pending":
@@ -154,6 +158,84 @@ func Setup(ctx context.Context, config SetupConfig) (*SetupResult, error) {
 			}
 		}
 	}
+}
+
+// RefreshAPIKeyConfig configuration for refreshing API key
+type RefreshAPIKeyConfig struct {
+	ServerURL    string // Base URL of the signaling server (e.g., https://example.com)
+	RefreshToken string // Refresh token from setup
+}
+
+// RefreshAPIKeyResult result from refresh API key
+type RefreshAPIKeyResult struct {
+	APIKey       string
+	RefreshToken string
+	AppID        string
+}
+
+// refreshRequest request body for POST /api/app/refresh
+type refreshRequest struct {
+	RefreshToken string `json:"refreshToken"`
+}
+
+// refreshResponse response from POST /api/app/refresh
+type refreshResponse struct {
+	APIKey       string `json:"apiKey"`
+	RefreshToken string `json:"refreshToken"`
+	AppID        string `json:"appId"`
+	Error        string `json:"error,omitempty"`
+}
+
+// RefreshAPIKey refreshes the API key using a refresh token
+// Returns new API key and refresh token (both are rotated on each refresh)
+func RefreshAPIKey(ctx context.Context, config RefreshAPIKeyConfig) (*RefreshAPIKeyResult, error) {
+	refreshURL := config.ServerURL + "/api/app/refresh"
+
+	reqBody := refreshRequest{RefreshToken: config.RefreshToken}
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", refreshURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create refresh request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to refresh API key: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp refreshResponse
+		if json.Unmarshal(body, &errResp) == nil && errResp.Error != "" {
+			return nil, fmt.Errorf("refresh failed: %s", errResp.Error)
+		}
+		return nil, fmt.Errorf("refresh failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result refreshResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse refresh response: %w", err)
+	}
+
+	if result.APIKey == "" || result.RefreshToken == "" {
+		return nil, fmt.Errorf("invalid refresh response: missing apiKey or refreshToken")
+	}
+
+	return &RefreshAPIKeyResult{
+		APIKey:       result.APIKey,
+		RefreshToken: result.RefreshToken,
+		AppID:        result.AppID,
+	}, nil
 }
 
 // openBrowser opens the default browser with the given URL
@@ -174,13 +256,13 @@ func openBrowser(url string) error {
 	return cmd.Start()
 }
 
-// SaveCredentials saves API key to a file (helper function)
+// SaveCredentials saves API key and refresh token to a file (helper function)
 func SaveCredentials(path string, result *SetupResult) error {
-	data := fmt.Sprintf("API_KEY=%s\nAPP_ID=%s\n", result.APIKey, result.AppID)
+	data := fmt.Sprintf("API_KEY=%s\nAPP_ID=%s\nREFRESH_TOKEN=%s\n", result.APIKey, result.AppID, result.RefreshToken)
 	return writeFile(path, []byte(data))
 }
 
-// LoadCredentials loads API key from a file (helper function)
+// LoadCredentials loads API key and refresh token from a file (helper function)
 func LoadCredentials(path string) (*SetupResult, error) {
 	data, err := readFile(path)
 	if err != nil {
@@ -200,6 +282,8 @@ func LoadCredentials(path string) (*SetupResult, error) {
 			result.APIKey = value
 		case "APP_ID":
 			result.AppID = value
+		case "REFRESH_TOKEN":
+			result.RefreshToken = value
 		}
 	}
 
@@ -208,6 +292,19 @@ func LoadCredentials(path string) (*SetupResult, error) {
 	}
 
 	return result, nil
+}
+
+// UpdateCredentials updates the credentials file with new API key and refresh token
+func UpdateCredentials(path string, result *RefreshAPIKeyResult) error {
+	// Load existing credentials to preserve AppID if not in result
+	existing, err := LoadCredentials(path)
+	appID := result.AppID
+	if err == nil && appID == "" {
+		appID = existing.AppID
+	}
+
+	data := fmt.Sprintf("API_KEY=%s\nAPP_ID=%s\nREFRESH_TOKEN=%s\n", result.APIKey, appID, result.RefreshToken)
+	return writeFile(path, []byte(data))
 }
 
 func writeFile(path string, data []byte) error {
