@@ -124,6 +124,15 @@ type Transport = transport.DataChannelTransport
 // Handler handles a gRPC method call
 type Handler = transport.Handler
 
+// StreamingHandler handles a server-streaming gRPC method call
+type StreamingHandler = transport.StreamingHandler
+
+// ServerStream provides methods to send streaming responses
+type ServerStream = transport.ServerStream
+
+// TypedServerStream provides a typed wrapper for ServerStream
+type TypedServerStream[Resp any] = transport.TypedServerStream[Resp]
+
 // HandlerOptions provides options for handling requests
 type HandlerOptions = transport.HandlerOptions
 
@@ -168,6 +177,15 @@ func MakeHandler[Req, Resp any](
 	handle func(ctx context.Context, req Req) (Resp, error),
 ) Handler {
 	return transport.MakeHandler(deserialize, serialize, handle)
+}
+
+// MakeStreamingHandler creates a StreamingHandler from typed serialization functions.
+func MakeStreamingHandler[Req, Resp any](
+	deserialize func([]byte) (Req, error),
+	serialize func(Resp) ([]byte, error),
+	handle func(req Req, stream *TypedServerStream[Resp]) error,
+) StreamingHandler {
+	return transport.MakeStreamingHandler(deserialize, serialize, handle)
 }
 
 // NewErrorResponse creates an error ResponseEnvelope with the given status code

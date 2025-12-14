@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -191,12 +192,59 @@ func setupGRPCHandlers(transport *grpcweb.Transport) {
 	)
 	transport.RegisterHandler("/example.EchoService/Reverse", reverseHandler)
 
+	// Register StreamNumbers handler (Server Streaming)
+	streamHandler := grpcweb.MakeStreamingHandler(
+		// Deserialize request from Protobuf
+		func(data []byte) (*pb.StreamRequest, error) {
+			req := &pb.StreamRequest{}
+			err := proto.Unmarshal(data, req)
+			return req, err
+		},
+		// Serialize response to Protobuf
+		func(resp *pb.StreamResponse) ([]byte, error) {
+			return proto.Marshal(resp)
+		},
+		// Handle streaming request
+		func(req *pb.StreamRequest, stream *grpcweb.TypedServerStream[*pb.StreamResponse]) error {
+			count := int(req.Count)
+			if count <= 0 {
+				count = 5
+			}
+			delayMs := int(req.DelayMs)
+			if delayMs <= 0 {
+				delayMs = 500
+			}
+
+			log.Printf("  StreamNumbers: count=%d, delay=%dms", count, delayMs)
+
+			for i := 1; i <= count; i++ {
+				resp := &pb.StreamResponse{
+					Number:  int32(i),
+					Message: fmt.Sprintf("Message %d of %d", i, count),
+				}
+				if err := stream.Send(resp); err != nil {
+					log.Printf("  StreamNumbers: send error: %v", err)
+					return err
+				}
+				log.Printf("  StreamNumbers: sent %d/%d", i, count)
+
+				if i < count {
+					time.Sleep(time.Duration(delayMs) * time.Millisecond)
+				}
+			}
+			log.Printf("  StreamNumbers: completed")
+			return nil
+		},
+	)
+	transport.RegisterStreamingHandler("/example.EchoService/StreamNumbers", streamHandler)
+
 	// Register Server Reflection
 	grpcweb.RegisterReflection(transport)
 
 	log.Println("✓ Registered gRPC services:")
 	log.Println("  - /example.EchoService/Echo")
 	log.Println("  - /example.EchoService/Reverse")
+	log.Println("  - /example.EchoService/StreamNumbers (server streaming)")
 	log.Println("  - /grpc.reflection.v1alpha.ServerReflection/ListServices (reflection)")
 }
 

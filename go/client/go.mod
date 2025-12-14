@@ -1,6 +1,6 @@
 module github.com/anthropics/cf-wbrtc-auth/go/client
 
-go 1.21
+go 1.23
 
 require (
 	github.com/anthropics/cf-wbrtc-auth/go/grpcweb v0.0.0

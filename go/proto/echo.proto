@@ -14,6 +14,18 @@ message EchoResponse {
   string message = 1;
 }
 
+// StreamRequest is the request message for StreamNumbers
+message StreamRequest {
+  int32 count = 1;  // Number of messages to stream
+  int32 delay_ms = 2;  // Delay between messages in milliseconds
+}
+
+// StreamResponse is the response message for StreamNumbers
+message StreamResponse {
+  int32 number = 1;
+  string message = 2;
+}
+
 // EchoService provides echo functionality
 service EchoService {
   // Echo returns the same message
@@ -21,4 +33,7 @@ service EchoService {
 
   // Reverse returns the message reversed
   rpc Reverse(EchoRequest) returns (EchoResponse);
+
+  // StreamNumbers streams a sequence of numbers (Server Streaming)
+  rpc StreamNumbers(StreamRequest) returns (stream StreamResponse);
 }

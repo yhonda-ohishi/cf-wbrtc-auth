@@ -1,6 +1,6 @@
 module github.com/anthropics/cf-wbrtc-auth/go/grpcweb
 
-go 1.21
+go 1.23
 
 require github.com/pion/webrtc/v4 v4.0.0
 

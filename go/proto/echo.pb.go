@@ -111,6 +111,112 @@ func (x *EchoResponse) GetMessage() string {
 	return ""
 }
 
+// StreamRequest is the request message for StreamNumbers
+type StreamRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Count         int32                  `protobuf:"varint,1,opt,name=count,proto3" json:"count,omitempty"`                    // Number of messages to stream
+	DelayMs       int32                  `protobuf:"varint,2,opt,name=delay_ms,json=delayMs,proto3" json:"delay_ms,omitempty"` // Delay between messages in milliseconds
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamRequest) Reset() {
+	*x = StreamRequest{}
+	mi := &file_echo_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamRequest) ProtoMessage() {}
+
+func (x *StreamRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_echo_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamRequest.ProtoReflect.Descriptor instead.
+func (*StreamRequest) Descriptor() ([]byte, []int) {
+	return file_echo_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *StreamRequest) GetCount() int32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+func (x *StreamRequest) GetDelayMs() int32 {
+	if x != nil {
+		return x.DelayMs
+	}
+	return 0
+}
+
+// StreamResponse is the response message for StreamNumbers
+type StreamResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Number        int32                  `protobuf:"varint,1,opt,name=number,proto3" json:"number,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamResponse) Reset() {
+	*x = StreamResponse{}
+	mi := &file_echo_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamResponse) ProtoMessage() {}
+
+func (x *StreamResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_echo_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamResponse.ProtoReflect.Descriptor instead.
+func (*StreamResponse) Descriptor() ([]byte, []int) {
+	return file_echo_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *StreamResponse) GetNumber() int32 {
+	if x != nil {
+		return x.Number
+	}
+	return 0
+}
+
+func (x *StreamResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 var File_echo_proto protoreflect.FileDescriptor
 
 const file_echo_proto_rawDesc = "" +
@@ -120,10 +226,17 @@ const file_echo_proto_rawDesc = "" +
 	"\vEchoRequest\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\"(\n" +
 	"\fEchoResponse\x12\x18\n" +
-	"\amessage\x18\x01 \x01(\tR\amessage2z\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage\"@\n" +
+	"\rStreamRequest\x12\x14\n" +
+	"\x05count\x18\x01 \x01(\x05R\x05count\x12\x19\n" +
+	"\bdelay_ms\x18\x02 \x01(\x05R\adelayMs\"B\n" +
+	"\x0eStreamResponse\x12\x16\n" +
+	"\x06number\x18\x01 \x01(\x05R\x06number\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage2\xbe\x01\n" +
 	"\vEchoService\x123\n" +
 	"\x04Echo\x12\x14.example.EchoRequest\x1a\x15.example.EchoResponse\x126\n" +
-	"\aReverse\x12\x14.example.EchoRequest\x1a\x15.example.EchoResponseB.Z,github.com/anthropics/cf-wbrtc-auth/go/protob\x06proto3"
+	"\aReverse\x12\x14.example.EchoRequest\x1a\x15.example.EchoResponse\x12B\n" +
+	"\rStreamNumbers\x12\x16.example.StreamRequest\x1a\x17.example.StreamResponse0\x01B.Z,github.com/anthropics/cf-wbrtc-auth/go/protob\x06proto3"
 
 var (
 	file_echo_proto_rawDescOnce sync.Once
@@ -137,18 +250,22 @@ func file_echo_proto_rawDescGZIP() []byte {
 	return file_echo_proto_rawDescData
 }
 
-var file_echo_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_echo_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_echo_proto_goTypes = []any{
-	(*EchoRequest)(nil),  // 0: example.EchoRequest
-	(*EchoResponse)(nil), // 1: example.EchoResponse
+	(*EchoRequest)(nil),    // 0: example.EchoRequest
+	(*EchoResponse)(nil),   // 1: example.EchoResponse
+	(*StreamRequest)(nil),  // 2: example.StreamRequest
+	(*StreamResponse)(nil), // 3: example.StreamResponse
 }
 var file_echo_proto_depIdxs = []int32{
 	0, // 0: example.EchoService.Echo:input_type -> example.EchoRequest
 	0, // 1: example.EchoService.Reverse:input_type -> example.EchoRequest
-	1, // 2: example.EchoService.Echo:output_type -> example.EchoResponse
-	1, // 3: example.EchoService.Reverse:output_type -> example.EchoResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
+	2, // 2: example.EchoService.StreamNumbers:input_type -> example.StreamRequest
+	1, // 3: example.EchoService.Echo:output_type -> example.EchoResponse
+	1, // 4: example.EchoService.Reverse:output_type -> example.EchoResponse
+	3, // 5: example.EchoService.StreamNumbers:output_type -> example.StreamResponse
+	3, // [3:6] is the sub-list for method output_type
+	0, // [0:3] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -165,7 +282,7 @@ func file_echo_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_echo_proto_rawDesc), len(file_echo_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
