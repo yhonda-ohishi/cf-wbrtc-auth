@@ -67,6 +67,17 @@ export {
 export {
   ReflectionClient,
   REFLECTION_METHOD_PATH,
+  FILE_CONTAINING_SYMBOL_PATH,
   type ServiceInfo,
   type ListServicesResponse,
+  type FileContainingSymbolRequest,
+  type FileContainingSymbolResponse,
+  type FieldInfo,
+  type MessageInfo,
+  type EnumInfo,
+  type ServiceDescriptor,
+  type MethodDescriptor,
+  type FileDescriptor,
+  parseFileDescriptor,
+  getFieldInfo,
 } from './reflection/reflection';

@@ -19,15 +19,24 @@ package reflection
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/anthropics/cf-wbrtc-auth/go/grpcweb/codec"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/reflect/protoregistry"
 )
 
 // MethodPath is the path for the ListServices method
 const MethodPath = "/grpc.reflection.v1alpha.ServerReflection/ListServices"
+
+// FileContainingSymbolPath is the path for the FileContainingSymbol method
+const FileContainingSymbolPath = "/grpc.reflection.v1alpha.ServerReflection/FileContainingSymbol"
 
 // ServiceInfo contains information about a registered service
 type ServiceInfo struct {
@@ -38,6 +47,16 @@ type ServiceInfo struct {
 // ListServicesResponse is the response for ListServices
 type ListServicesResponse struct {
 	Services []ServiceInfo `json:"services"`
+}
+
+// FileContainingSymbolRequest is the request for FileContainingSymbol
+type FileContainingSymbolRequest struct {
+	Symbol string `json:"symbol"`
+}
+
+// FileContainingSymbolResponse is the response for FileContainingSymbol
+type FileContainingSymbolResponse struct {
+	FileDescriptorProto string `json:"fileDescriptorProto"` // base64 encoded
 }
 
 // HandlerRegistry is an interface for getting registered handlers
@@ -111,6 +130,112 @@ func (r *Reflection) Handler() func(ctx context.Context, req *codec.RequestEnvel
 
 		// Simple JSON encoding (avoiding external dependencies)
 		data := encodeListServicesResponse(resp)
+
+		return &codec.ResponseEnvelope{
+			Headers:  map[string]string{"content-type": "application/json"},
+			Messages: [][]byte{data},
+			Trailers: map[string]string{"grpc-status": "0"},
+		}, nil
+	}
+}
+
+// FileContainingSymbol returns the FileDescriptorProto for a given symbol name.
+// The symbol can be a fully qualified service name (e.g., "mypackage.MyService")
+// or a method name (e.g., "mypackage.MyService.MyMethod").
+func (r *Reflection) FileContainingSymbol(symbol string) (*FileContainingSymbolResponse, error) {
+	// Find the descriptor by name in the global registry
+	desc, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(symbol))
+	if err != nil {
+		return nil, err
+	}
+
+	// Get the parent file descriptor
+	fileDesc := desc.ParentFile()
+	if fileDesc == nil {
+		return nil, protoregistry.NotFound
+	}
+
+	// Convert to FileDescriptorProto
+	fileDescProto := protodesc.ToFileDescriptorProto(fileDesc)
+
+	// Serialize to bytes
+	data, err := proto.Marshal(fileDescProto)
+	if err != nil {
+		return nil, err
+	}
+
+	// Base64 encode
+	encoded := base64.StdEncoding.EncodeToString(data)
+
+	return &FileContainingSymbolResponse{
+		FileDescriptorProto: encoded,
+	}, nil
+}
+
+// FileContainingSymbolHandler returns a gRPC handler for the FileContainingSymbol method
+func (r *Reflection) FileContainingSymbolHandler() func(ctx context.Context, req *codec.RequestEnvelope) (*codec.ResponseEnvelope, error) {
+	return func(ctx context.Context, req *codec.RequestEnvelope) (*codec.ResponseEnvelope, error) {
+		// Parse request JSON
+		var request FileContainingSymbolRequest
+		if len(req.Message) > 0 {
+			if err := json.Unmarshal(req.Message, &request); err != nil {
+				return &codec.ResponseEnvelope{
+					Headers:  map[string]string{"content-type": "application/json"},
+					Messages: [][]byte{[]byte(`{"error":"invalid request"}`)},
+					Trailers: map[string]string{
+						"grpc-status":  "3", // InvalidArgument
+						"grpc-message": "invalid request JSON",
+					},
+				}, nil
+			}
+		}
+
+		if request.Symbol == "" {
+			return &codec.ResponseEnvelope{
+				Headers:  map[string]string{"content-type": "application/json"},
+				Messages: [][]byte{[]byte(`{"error":"symbol is required"}`)},
+				Trailers: map[string]string{
+					"grpc-status":  "3", // InvalidArgument
+					"grpc-message": "symbol is required",
+				},
+			}, nil
+		}
+
+		// Get file descriptor
+		resp, err := r.FileContainingSymbol(request.Symbol)
+		if err != nil {
+			if err == protoregistry.NotFound {
+				return &codec.ResponseEnvelope{
+					Headers:  map[string]string{"content-type": "application/json"},
+					Messages: [][]byte{[]byte(`{"error":"symbol not found"}`)},
+					Trailers: map[string]string{
+						"grpc-status":  "5", // NotFound
+						"grpc-message": "symbol not found: " + request.Symbol,
+					},
+				}, nil
+			}
+			return &codec.ResponseEnvelope{
+				Headers:  map[string]string{"content-type": "application/json"},
+				Messages: [][]byte{[]byte(`{"error":"internal error"}`)},
+				Trailers: map[string]string{
+					"grpc-status":  "13", // Internal
+					"grpc-message": "internal error: " + err.Error(),
+				},
+			}, nil
+		}
+
+		// Encode response
+		data, err := json.Marshal(resp)
+		if err != nil {
+			return &codec.ResponseEnvelope{
+				Headers:  map[string]string{"content-type": "application/json"},
+				Messages: [][]byte{[]byte(`{"error":"failed to encode response"}`)},
+				Trailers: map[string]string{
+					"grpc-status":  "13", // Internal
+					"grpc-message": "failed to encode response",
+				},
+			}, nil
+		}
 
 		return &codec.ResponseEnvelope{
 			Headers:  map[string]string{"content-type": "application/json"},

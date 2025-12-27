@@ -31,4 +31,4 @@ StreamFlag, decodeStreamMessage, isStreamMessage, } from './codec/envelope';
 // Transport exports - main API for users
 export { DataChannelTransport, GrpcError, } from './transport/datachannel-transport';
 // Reflection exports - for service discovery
-export { ReflectionClient, REFLECTION_METHOD_PATH, } from './reflection/reflection';
+export { ReflectionClient, REFLECTION_METHOD_PATH, FILE_CONTAINING_SYMBOL_PATH, parseFileDescriptor, getFieldInfo, } from './reflection/reflection';

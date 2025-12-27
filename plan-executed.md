@@ -171,3 +171,18 @@ WebRTC DataChannel上でgRPC-Web通信を可能にするトランスポート層
   - `src/client/reflection-bundle.ts` - バンドル済みJavaScript
   - `src/index.ts` - `/reflection` ルート追加
   - Go Appに接続してサービス一覧を表示する機能
+
+### Phase 8.8: ReflectionClient file_containing_symbol サポート
+- [x] Go側: `FileContainingSymbol` メソッドと `FileContainingSymbolHandler` 実装
+  - `go/grpcweb/reflection/reflection.go` に追加
+  - `protoregistry.GlobalFiles` を使用してFileDescriptorを取得
+  - base64エンコードされたFileDescriptorProtoを返す
+- [x] Go側: `RegisterReflection` に FileContainingSymbol ハンドラ登録
+  - `go/grpcweb/grpcweb.go` を更新
+- [x] TypeScript側: `fileContainingSymbol` メソッド追加
+  - `src/grpc/reflection/reflection.ts` に追加
+- [x] TypeScript側: FileDescriptor パーサー実装
+  - 外部ライブラリに依存せず手動でprotobufバイナリをデコード
+  - `parseFileDescriptor()`, `getFieldInfo()` ユーティリティ関数
+- [x] `src/grpc/index.ts` に新しい型をエクスポート追加
+- [x] テスト更新（Go側、TypeScript側）

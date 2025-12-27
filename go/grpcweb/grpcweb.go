@@ -214,10 +214,17 @@ type (
 	ServiceInfo = reflection.ServiceInfo
 	// ListServicesResponse is the response for ListServices
 	ListServicesResponse = reflection.ListServicesResponse
+	// FileContainingSymbolRequest is the request for FileContainingSymbol
+	FileContainingSymbolRequest = reflection.FileContainingSymbolRequest
+	// FileContainingSymbolResponse is the response for FileContainingSymbol
+	FileContainingSymbolResponse = reflection.FileContainingSymbolResponse
 )
 
 // ReflectionMethodPath is the path for the ListServices method
 const ReflectionMethodPath = reflection.MethodPath
+
+// FileContainingSymbolPath is the path for the FileContainingSymbol method
+const FileContainingSymbolPath = reflection.FileContainingSymbolPath
 
 // NewReflection creates a new Reflection instance.
 // The transport must implement the HandlerRegistry interface.
@@ -241,5 +248,6 @@ func NewReflection(transport *Transport) *Reflection {
 func RegisterReflection(transport *Transport) *Reflection {
 	refl := reflection.New(transport)
 	transport.RegisterHandler(reflection.MethodPath, refl.Handler())
+	transport.RegisterHandler(reflection.FileContainingSymbolPath, refl.FileContainingSymbolHandler())
 	return refl
 }

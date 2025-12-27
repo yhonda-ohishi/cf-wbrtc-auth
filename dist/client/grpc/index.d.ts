@@ -24,5 +24,5 @@
 export { FRAME_DATA, FRAME_TRAILER, type Frame, encodeFrame, decodeFrames, createDataFrame, createTrailerFrame, parseTrailers, } from './codec/frame';
 export { type RequestEnvelope, type ResponseEnvelope, StatusCode, encodeRequest, decodeResponse, encodeResponse, createErrorResponse, isErrorResponse, getError, getStatusName, StreamFlag, type StreamMessage, decodeStreamMessage, isStreamMessage, } from './codec/envelope';
 export { DataChannelTransport, GrpcError, type CallOptions, type UnaryResponse, type StreamingResponse, } from './transport/datachannel-transport';
-export { ReflectionClient, REFLECTION_METHOD_PATH, type ServiceInfo, type ListServicesResponse, } from './reflection/reflection';
+export { ReflectionClient, REFLECTION_METHOD_PATH, FILE_CONTAINING_SYMBOL_PATH, type ServiceInfo, type ListServicesResponse, type FileContainingSymbolRequest, type FileContainingSymbolResponse, type FieldInfo, type MessageInfo, type EnumInfo, type ServiceDescriptor, type MethodDescriptor, type FileDescriptor, parseFileDescriptor, getFieldInfo, } from './reflection/reflection';
 //# sourceMappingURL=index.d.ts.map
